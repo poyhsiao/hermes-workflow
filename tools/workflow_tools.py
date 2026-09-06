@@ -7,10 +7,11 @@ import uuid
 from datetime import datetime, timezone
 
 from storage.sqlite_store import ExecutionStore
-from workflow.context import WorkflowContext as WC
+from workflow.context import WorkflowContext as WfCtx
 from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
+    WorkflowDefinition,
     WorkflowEngine,
 )
 from workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
@@ -60,7 +61,7 @@ def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool"
         triggered_by_user=triggered_by_user,
     )
 
-    ctx = WC(workflow_id=name, execution_id=exec_id)
+    ctx = WfCtx(workflow_id=name, execution_id=exec_id)
     for k, v in context.items():
         ctx.set(k, v)
 
@@ -89,7 +90,6 @@ def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool"
 
 def workflow_stop(execution_id: str) -> dict:
     """Stop a running workflow execution."""
-    store = _get_store()
     with _engines_lock:
         engine = _engines.get(execution_id)
     if not engine:
@@ -126,7 +126,7 @@ def workflow_define(name: str, yaml_content: str, created_by: str | None = None)
     store = _get_store()
     try:
         defn = parse_workflow_yaml(yaml_content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
 
     defn.name = name
@@ -198,6 +198,8 @@ def workflow_rollback(
         return {"ok": False, "error": f"Execution '{execution_id}' not found"}
 
     vs = VersionedStore(store)
+    defn: WorkflowDefinition | None = None
+    checkpoint = None
 
     if to_version is not None:
         # Version rollback: restore old definition as new version, then re-run
@@ -205,6 +207,8 @@ def workflow_rollback(
         if not old_defn:
             return {"ok": False, "error": f"Version {to_version} not found for '{record.workflow_id}'"}
         new_defn = vs.rollback_definition(record.workflow_id, to_version, changed_by=triggered_by_user)
+        if not new_defn:
+            return {"ok": False, "error": f"Rollback failed for '{record.workflow_id}'"}
         defn = new_defn
         checkpoint = None
     else:
@@ -237,7 +241,7 @@ def workflow_rollback(
 
     # Restore context from checkpoint or start fresh
     if checkpoint:
-        ctx = WC(
+        ctx = WfCtx(
             workflow_id=record.workflow_id,
             execution_id=new_exec_id,
             shared=dict(checkpoint.get("shared", {})),
@@ -245,7 +249,7 @@ def workflow_rollback(
             events=list(checkpoint.get("events", [])),
         )
     else:
-        ctx = WC(workflow_id=record.workflow_id, execution_id=new_exec_id)
+        ctx = WfCtx(workflow_id=record.workflow_id, execution_id=new_exec_id)
 
     store.create_execution(new_record, ctx.to_json())
 
@@ -307,7 +311,7 @@ def workflow_import(yaml_content: str, as_template: bool = False) -> dict:
     """Import a workflow from YAML content."""
     try:
         defn = parse_workflow_yaml(yaml_content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
     store = _get_store()
     vs = VersionedStore(store)
@@ -349,7 +353,7 @@ def workflow_template_save(name: str, yaml_content: str, description: str = "", 
     try:
         path = TemplateRegistry().save(name, yaml_content, description, tags)
         return {"ok": True, "name": name, "path": path}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
 
 

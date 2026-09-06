@@ -6,14 +6,20 @@ on:
   pull_request_review_comment:
     types: [created]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   opencode:
+    name: OpenCode Review
     if: |
       contains(github.event.comment.body, ' /oc') ||
       startsWith(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, ' /opencode') ||
       startsWith(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
+    # Write permissions required for posting review comments and labels
     permissions:
       id-token: write
       contents: write
@@ -21,13 +27,21 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
 
+      - name: Set LLM API key env
+        env:
+          LLM_SERVICE_PROVIDER: ${{ secrets.LLM_SERVICE_PROVIDER }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          # Export the API key with the provider's env var name (e.g. ANTHROPIC_API_KEY)
+          PROVIDER_VAR="${LLM_SERVICE_PROVIDER}_API_KEY"
+          echo "Setting $PROVIDER_VAR"
+          echo "$PROVIDER_VAR=$LLM_API_KEY" >> $GITHUB_ENV
+
       - name: Run opencode
         uses: anomalyco/opencode/github@latest
-        env:
-          ${{ secrets.LLM_SERVICE_PROVIDER }}: ${{ secrets.LLM_API_KEY }}
         with:
           model: ${{ secrets.LLM_MODEL_NAME }}

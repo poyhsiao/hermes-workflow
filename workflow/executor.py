@@ -6,7 +6,7 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from observability.trace import trace_step
@@ -51,12 +51,15 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
         tool_fn = get_tool(tool_name)
         if tool_fn:
             result = tool_fn(**resolved_args)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).debug("Tool '%s' not found in registry: %s", tool_name, e)
 
     if result is None:
         # Fallback: subprocess for shell-like commands
+        import re
         import subprocess
+
         from workflow.security import PermissionScope
         scope = PermissionScope()
         cmd = resolved_args.get("command") or resolved_args.get("cmd", "")
@@ -64,7 +67,10 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
             raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
         if scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
-        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        # Block shell operators that enable command injection: substitution, chaining, redirection
+        if re.search(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<", cmd):
+            raise PermissionError(f"Step '{step.name}': command contains disallowed shell operators")
+        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
     # Store result in context
@@ -81,8 +87,8 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> 
 
     try:
         from tools.delegate_tool import delegate_task
-    except Exception:
-        raise RuntimeError(f"Step '{step.name}': delegate_task not available in Hermes")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Step '{step.name}': delegate_task not available in Hermes") from e
 
     result = delegate_task(
         profile=resolved_profile or "default",
@@ -102,7 +108,7 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
     results = {}
     with ThreadPoolExecutor(max_workers=len(step.branches)) as executor:
         futures = {
-            executor.submit(_execute_branch, branch, ctx, audit, step.name): branch
+            executor.submit(_execute_branch, branch, ctx, audit): branch
             for branch in step.branches
         }
         for future in as_completed(futures):
@@ -111,7 +117,7 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
                 branch_result = future.result()
                 results[branch.name] = branch_result
                 ctx.set(f"{step.name}.{branch.name}", branch_result)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 results[branch.name] = {"error": str(e)}
                 ctx.set(f"{step.name}.{branch.name}", {"error": str(e)})
     return results
@@ -191,7 +197,7 @@ def execute_steps(
     step_map = {s.name: s for s in definition.steps}
     completed = set()
     failed_step: str | None = None
-    error: Exception | None = None
+    _error: Exception | None = None
     workflow_started_at = datetime.now(timezone.utc)
 
     # ponytail: resume support — pre-mark earlier steps as completed
@@ -210,9 +216,9 @@ def execute_steps(
     def _should_stop() -> bool:
         if record.status == ExecutionStatus.TERMINATED:
             return True
-        if stop_event and stop_event.is_set():
+        if record.status == ExecutionStatus.TERMINATED:
             return True
-        return False
+        return bool(stop_event and stop_event.is_set())
 
     while ready:
         if _should_stop():
@@ -242,7 +248,7 @@ def execute_steps(
             )
 
             # Checkpoint before step (include compensate so saga rollback can access it later)
-            pre_snap = ctx.checkpoint(
+            _pre_snap = ctx.checkpoint(
                 step_index=definition.steps.index(step),
                 metadata={"step": step.name, "pre": True, "compensate": {"tool": step.compensate.tool, "args": step.compensate.args} if step.compensate else None},
             )
@@ -263,7 +269,7 @@ def execute_steps(
                     store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), checkpoint_json=ckpt_json, ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     action = strategy.decide(step, e)
 
                     if action == ErrorAction.RETRY and strategy.should_retry(attempt + 1):
@@ -339,7 +345,7 @@ def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: Execution
                 try:
                     execute_tool_step(step, ctx, audit)
                     audit.log(record.id, "saga.compensate", step_id=s["step_name"], details={"ok": True})
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     audit.log(record.id, "saga.compensate.failed", step_id=s["step_name"], details={"error": str(e)})
 
     checkpoint = store.get_last_checkpoint(record.id)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from typing import Any
 
 # ── OpenTelemetry integration ──────────────────────────────────────────────────
 # Try to use real OTel if available, otherwise no-op stub
@@ -17,10 +18,10 @@ try:
     trace.set_tracer_provider(_provider)
     _tracer = trace.get_tracer(__name__)
 
-    def trace_workflow(execution_id: str, workflow_name: str):
+    def trace_workflow(execution_id: str, workflow_name: str) -> Any:  # type: ignore[misc]
         return _tracer.start_as_current_span(f"workflow/{workflow_name}", attributes={"execution_id": execution_id})
 
-    def trace_step(step_name: str, step_type: str, execution_id: str):
+    def trace_step(step_name: str, step_type: str, execution_id: str) -> Any:  # type: ignore[misc]
         return _tracer.start_as_current_span(f"step/{step_name}", attributes={"step_type": step_type, "execution_id": execution_id})
 
     @contextmanager
@@ -38,11 +39,11 @@ except ImportError:
     from contextlib import contextmanager
 
     @contextmanager
-    def trace_workflow(execution_id: str, workflow_name: str):
+    def trace_workflow(execution_id: str, workflow_name: str) -> Any:  # type: ignore[misc]
         yield
 
     @contextmanager
-    def trace_step(step_name: str, step_type: str, execution_id: str):
+    def trace_step(step_name: str, step_type: str, execution_id: str) -> Any:  # type: ignore[misc]
         yield
 
     @contextmanager

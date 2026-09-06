@@ -76,7 +76,7 @@ def add_workflow_parser(subparsers) -> None:
 
 def _dispatch_workflow(args) -> dict[str, Any]:
     """Route parsed CLI args to workflow tools."""
-    dispatcher = WorkflowSlashDispatcher(wt)
+    _ = WorkflowSlashDispatcher(wt)
     verb = getattr(args, "workflow_verb", None)
 
     if verb == "run":
@@ -97,7 +97,12 @@ def _dispatch_workflow(args) -> dict[str, Any]:
         fd, path = tempfile.mkstemp(suffix=".yaml")
         with os.fdopen(fd, "w") as f:
             f.write(result.get("yaml", ""))
-        subprocess.run([subprocess.os.environ.get("EDITOR", "vi"), path], check=True)
+        # Whitelist EDITOR to prevent command injection; falls back to 'vi'
+        allowed_editors = {"vi", "vim", "nano", "emacs", "code", "subl"}
+        editor = subprocess.os.environ.get("EDITOR", "vi")
+        if editor not in allowed_editors:
+            editor = "vi"
+        subprocess.run([editor, path], check=True)  # noqa: S603
         with open(path) as f:
             yaml_content = f.read()
         os.unlink(path)
