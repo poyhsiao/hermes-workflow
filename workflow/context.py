@@ -67,7 +67,11 @@ class WorkflowContext:
         for key, val in self.shared.items():
             placeholder = "{{ " + key + " }}"
             if placeholder in result:
-                result = result.replace(placeholder, str(val))
+                replacement = str(val)
+                # Escape shell metacharacters that enable injection after substitution
+                for ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'", "\n"):
+                    replacement = replacement.replace(ch, "\\" + ch)
+                result = result.replace(placeholder, replacement)
         return result
 
     def resolve_args(self, args: dict) -> dict:

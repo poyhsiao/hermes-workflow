@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 import json
 import sqlite3
 import threading
@@ -321,7 +322,6 @@ class ExecutionStore:
     # ── Audit ─────────────────────────────────────────────────────────────────
 
     def log_audit(self, exec_id: str, action: str, step_id: str | None = None, actor: str | None = None, details: dict | None = None) -> None:
-        import getpass
         self.db.execute(
             "INSERT INTO audit_log (id, execution_id, step_id, action, actor, details_json, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), exec_id, step_id, action, actor or getpass.getuser(), json.dumps(details or {}, default=str), datetime.now(timezone.utc).isoformat()),

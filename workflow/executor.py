@@ -333,7 +333,6 @@ def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: Execution
         steps = store.get_steps(record.id)
         completed_steps = [s for s in reversed(steps) if s["status"] == "completed" and s.get("checkpoint_json")]
         for s in completed_steps:
-            import json
             ckpt = json.loads(s["checkpoint_json"])
             compensate = ckpt.get("metadata", {}).get("compensate")
             if compensate:
@@ -347,6 +346,7 @@ def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: Execution
                     audit.log(record.id, "saga.compensate", step_id=s["step_name"], details={"ok": True})
                 except Exception as e:  # noqa: BLE001
                     audit.log(record.id, "saga.compensate.failed", step_id=s["step_name"], details={"error": str(e)})
+                    raise  # Re-raise so rollback failure surfaces to caller
 
     checkpoint = store.get_last_checkpoint(record.id)
     if checkpoint:
