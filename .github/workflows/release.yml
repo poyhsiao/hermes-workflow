@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Verify version in plugin.yaml
+        run: |
+          python -c "
+          import yaml, re, sys
+          with open('plugin.yaml') as f:
+              data = yaml.safe_load(f)
+          tag = sys.argv[1]
+          expected = tag.lstrip('v')
+          actual = data['version']
+          if actual != expected:
+              print(f'ERROR: plugin.yaml version={actual} but tag={expected}')
+              sys.exit(1)
+          print(f'Version match: {actual}')
+          " "${GITHUB_REF_NAME}"
+
+      - name: Get version tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(GITHUB_REF_NAME, '-rc') || contains(GITHUB_REF_NAME, '-beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run full test suite
+        run: |
+          pip install pytest pytest-cov pyyaml
+          python -m pytest tests/ -v --tb=short
