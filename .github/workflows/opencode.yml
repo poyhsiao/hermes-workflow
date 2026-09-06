@@ -25,9 +25,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set LLM API key env
+        env:
+          LLM_SERVICE_PROVIDER: ${{ secrets.LLM_SERVICE_PROVIDER }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          # Export the API key with the provider's env var name (e.g. ANTHROPIC_API_KEY)
+          PROVIDER_VAR="${LLM_SERVICE_PROVIDER}_API_KEY"
+          echo "Setting $PROVIDER_VAR"
+          echo "$PROVIDER_VAR=$LLM_API_KEY" >> $GITHUB_ENV
+
       - name: Run opencode
         uses: anomalyco/opencode/github@latest
-        env:
-          ${{ secrets.LLM_SERVICE_PROVIDER }}: ${{ secrets.LLM_API_KEY }}
         with:
           model: ${{ secrets.LLM_MODEL_NAME }}

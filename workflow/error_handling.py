@@ -24,6 +24,14 @@ class ErrorStrategy(ABC):
         """Return the action to take. One of ErrorAction constants."""
         raise NotImplementedError
 
+    def should_retry(self, attempt: int) -> bool:
+        """Whether to retry after a RETRY action. Base returns False."""
+        return False
+
+    def delay(self, attempt: int) -> float:
+        """Seconds to wait before retry. Base returns 0."""
+        return 0.0
+
 
 class FailFast(ErrorStrategy):
     def decide(self, step: Step, error: Exception) -> str:

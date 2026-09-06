@@ -11,6 +11,7 @@ from workflow.context import WorkflowContext as WC
 from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
+    WorkflowDefinition,
     WorkflowEngine,
 )
 from workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
@@ -197,6 +198,8 @@ def workflow_rollback(
         return {"ok": False, "error": f"Execution '{execution_id}' not found"}
 
     vs = VersionedStore(store)
+    defn: WorkflowDefinition | None = None
+    checkpoint = None
 
     if to_version is not None:
         # Version rollback: restore old definition as new version, then re-run
@@ -204,6 +207,8 @@ def workflow_rollback(
         if not old_defn:
             return {"ok": False, "error": f"Version {to_version} not found for '{record.workflow_id}'"}
         new_defn = vs.rollback_definition(record.workflow_id, to_version, changed_by=triggered_by_user)
+        if not new_defn:
+            return {"ok": False, "error": f"Rollback failed for '{record.workflow_id}'"}
         defn = new_defn
         checkpoint = None
     else:
