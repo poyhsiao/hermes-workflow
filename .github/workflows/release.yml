@@ -41,7 +41,7 @@ jobs:
               print(f'ERROR: plugin.yaml version={actual} but tag={expected}')
               sys.exit(1)
           print(f'Version match: {actual}')
-          " "${github.ref_name}"
+          " ${github.ref_name}"
 
   test:
     name: Test
