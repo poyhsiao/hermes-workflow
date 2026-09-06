@@ -1,0 +1,31 @@
+name: hermes-dynamic-workflow
+version: "1.0.0"
+description: Dynamic workflow execution engine (Claude Code /workflow style)
+author: Kim Hsiao
+platforms: [cli, tui, desktop]
+hermes_version: ">=0.1.0"
+entry_point: __init__.py
+hooks:
+  - pre_llm_call
+  - on_message
+tools:
+  - workflow_run
+  - workflow_stop
+  - workflow_status
+  - workflow_define
+  - workflow_delete
+  - workflow_list
+  - workflow_show
+  - workflow_history
+  - workflow_rollback
+  - workflow_export
+  - workflow_import
+  - workflow_diff
+  - workflow_metrics
+  - workflow_suggest
+  - workflow_template_save
+  - workflow_template_list
+  - workflow_template_load
+  - workflow_template_delete
+commands:
+  - workflow

@@ -1,0 +1,382 @@
+"""Hermes tools exposed by the workflow plugin."""
+
+from __future__ import annotations
+
+import json
+import threading
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from workflow.core import (
+    ConcurrencyMode,
+    ErrorPolicy,
+    ExecutionRecord,
+    ExecutionStatus,
+    RollbackPolicy,
+    WorkflowDefinition,
+    WorkflowEngine,
+)
+from workflow.context import WorkflowContext as WC
+from workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
+from workflow.executor import execute_steps
+from workflow.security import AuditLogger
+from workflow.versioned_store import VersionedStore
+from storage.sqlite_store import ExecutionStore
+
+# Global store + running engines (thread-safe)
+_store: Optional[ExecutionStore] = None
+_engines: dict[str, WorkflowEngine] = {}
+_engines_lock = threading.Lock()
+
+
+def _get_store() -> ExecutionStore:
+    global _store
+    if _store is None:
+        _store = ExecutionStore()
+    return _store
+
+
+def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool", triggered_by_user: str | None = None, **kwargs) -> dict:
+    """Run a named workflow with given args. Returns execution_id immediately."""
+    store = _get_store()
+    defn = store.get_definition(name)
+    if not defn:
+        return {"ok": False, "error": f"Workflow '{name}' not found. Use 'workflow_define' to create it."}
+
+    args = args or {}
+    exec_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Merge args into context schema
+    context = dict(defn.context_schema)
+    context.update(args)
+
+    record = ExecutionRecord(
+        id=exec_id,
+        workflow_id=name,
+        version=defn.version,
+        status=ExecutionStatus.RUNNING,
+        concurrency_mode=defn.concurrency,
+        max_duration=defn.max_duration,
+        error_policy=defn.error_policy,
+        rollback_policy=defn.rollback_policy,
+        started_at=now,
+        triggered_by=triggered_by,
+        triggered_by_user=triggered_by_user,
+    )
+
+    ctx = WC(workflow_id=name, execution_id=exec_id)
+    for k, v in context.items():
+        ctx.set(k, v)
+
+    store.create_execution(record, ctx.to_json())
+
+    engine = WorkflowEngine(defn, ctx, record, store)
+    audit = AuditLogger(store)
+    audit.log(exec_id, "workflow_run.started", details={"name": name, "args": args})
+
+    with _engines_lock:
+        _engines[exec_id] = engine
+
+    # Run in background thread
+    def _run():
+        try:
+            execute_steps(defn, ctx, record, store, audit, stop_event=engine._stop_event)
+        finally:
+            with _engines_lock:
+                _engines.pop(exec_id, None)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    return {"ok": True, "execution_id": exec_id, "status": ExecutionStatus.RUNNING.value, "name": name}
+
+
+def workflow_stop(execution_id: str) -> dict:
+    """Stop a running workflow execution."""
+    store = _get_store()
+    with _engines_lock:
+        engine = _engines.get(execution_id)
+    if not engine:
+        return {"ok": False, "error": f"No running execution '{execution_id}'"}
+    engine.stop()
+    engine.update_status(ExecutionStatus.TERMINATED)
+    return {"ok": True, "execution_id": execution_id, "status": ExecutionStatus.TERMINATED.value}
+
+
+def workflow_status(execution_id: str) -> dict:
+    """Get status of a workflow execution."""
+    store = _get_store()
+    record = store.get_execution(execution_id)
+    if not record:
+        return {"ok": False, "error": f"Execution '{execution_id}' not found"}
+    steps = store.get_steps(execution_id)
+    return {
+        "ok": True,
+        "execution_id": execution_id,
+        "workflow_id": record.workflow_id,
+        "version": record.version,
+        "status": record.status.value,
+        "started_at": record.started_at,
+        "ended_at": record.ended_at,
+        "steps": [
+            {"index": s["step_index"], "name": s["step_name"], "type": s["step_type"], "status": s["status"]}
+            for s in steps
+        ],
+    }
+
+
+def workflow_define(name: str, yaml_content: str, created_by: str | None = None) -> dict:
+    """Define or update a workflow from YAML content."""
+    store = _get_store()
+    try:
+        defn = parse_workflow_yaml(yaml_content)
+    except Exception as e:
+        return {"ok": False, "error": f"Invalid YAML: {e}"}
+
+    defn.name = name
+    vs = VersionedStore(store)
+    wf_id = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
+    if wf_id:
+        vs.save(defn, created_by, "updated via workflow_define")
+        return {"ok": True, "name": name, "version": defn.version + 1, "updated": True}
+    else:
+        new_id = store.save_definition(defn, created_by)
+        return {"ok": True, "name": name, "version": defn.version, "id": new_id, "created": True}
+
+
+def workflow_delete(name: str) -> dict:
+    """Delete a workflow definition."""
+    store = _get_store()
+    row = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
+    if not row:
+        return {"ok": False, "error": f"Workflow '{name}' not found"}
+    store.delete_definition(row["id"])
+    return {"ok": True, "deleted": name}
+
+
+def workflow_list() -> dict:
+    """List all workflow definitions."""
+    store = _get_store()
+    defs = store.list_definitions()
+    return {"ok": True, "workflows": defs}
+
+
+def workflow_show(name: str) -> dict:
+    """Show the YAML definition of a named workflow."""
+    store = _get_store()
+    defn = store.get_definition(name)
+    if not defn:
+        return {"ok": False, "error": f"Workflow '{name}' not found"}
+    return {"ok": True, "name": name, "yaml": dump_workflow_yaml(defn)}
+
+
+def workflow_history(workflow_name: str | None = None, limit: int = 50) -> dict:
+    """Show execution history."""
+    store = _get_store()
+    wf_id = None
+    if workflow_name:
+        row = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (workflow_name,)).fetchone()
+        if row:
+            wf_id = row["id"]
+    rows = store.list_executions(workflow_id=wf_id, limit=limit)
+    return {"ok": True, "executions": rows}
+
+
+def workflow_rollback(
+    execution_id: str,
+    to_version: int | None = None,
+    triggered_by: str = "tool",
+    triggered_by_user: str | None = None,
+) -> dict:
+    """
+    Rollback an execution to its last checkpoint, or to a specific definition version.
+
+    to_version: if provided, rollback the workflow definition to that version and re-run.
+    Otherwise, re-run from the last checkpoint.
+    """
+    store = _get_store()
+    record = store.get_execution(execution_id)
+    if not record:
+        return {"ok": False, "error": f"Execution '{execution_id}' not found"}
+
+    vs = VersionedStore(store)
+
+    if to_version is not None:
+        # Version rollback: restore old definition as new version, then re-run
+        old_defn = vs.get(record.workflow_id, to_version)
+        if not old_defn:
+            return {"ok": False, "error": f"Version {to_version} not found for '{record.workflow_id}'"}
+        new_defn = vs.rollback_definition(record.workflow_id, to_version, changed_by=triggered_by_user)
+        defn = new_defn
+        checkpoint = None
+    else:
+        # Checkpoint rollback: re-run from last checkpoint
+        defn = store.get_definition(record.workflow_id)
+        if not defn:
+            return {"ok": False, "error": f"Workflow '{record.workflow_id}' not found"}
+        checkpoint = store.get_last_checkpoint(execution_id)
+        if not checkpoint:
+            return {"ok": False, "error": "No checkpoint found for this execution"}
+
+    # Create new execution with restored context
+    import uuid
+    new_exec_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    new_record = ExecutionRecord(
+        id=new_exec_id,
+        workflow_id=record.workflow_id,
+        version=defn.version,
+        status=ExecutionStatus.RUNNING,
+        concurrency_mode=defn.concurrency,
+        max_duration=defn.max_duration,
+        error_policy=defn.error_policy,
+        rollback_policy=defn.rollback_policy,
+        started_at=now,
+        triggered_by=triggered_by,
+        triggered_by_user=triggered_by_user,
+    )
+
+    # Restore context from checkpoint or start fresh
+    if checkpoint:
+        ctx = WC(
+            workflow_id=record.workflow_id,
+            execution_id=new_exec_id,
+            shared=dict(checkpoint.get("shared", {})),
+            pipeline=list(checkpoint.get("pipeline", [])),
+            events=list(checkpoint.get("events", [])),
+        )
+    else:
+        ctx = WC(workflow_id=record.workflow_id, execution_id=new_exec_id)
+
+    store.create_execution(new_record, ctx.to_json())
+
+    audit = AuditLogger(store)
+    audit.log(new_exec_id, "workflow.rollback", details={
+        "from_execution": execution_id,
+        "checkpoint_restored": checkpoint is not None,
+        "version": to_version,
+    })
+
+    engine = WorkflowEngine(defn, ctx, new_record, store)
+    with _engines_lock:
+        _engines[new_exec_id] = engine
+
+    def _run():
+        try:
+            # ponytail: resume from checkpoint step_index (skip already-completed steps)
+            from workflow.executor import execute_steps
+            step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
+            ctx.checkpoints.clear()  # fresh checkpoint chain for this run
+            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset)
+        finally:
+            with _engines_lock:
+                _engines.pop(new_exec_id, None)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    return {
+        "ok": True,
+        "execution_id": new_exec_id,
+        "status": ExecutionStatus.RUNNING.value,
+        "name": record.workflow_id,
+        "restored_from": execution_id,
+        "version": defn.version,
+        "checkpoint_restored": checkpoint is not None,
+    }
+
+
+def workflow_diff(name: str, v1: int, v2: int) -> dict:
+    """Compare two versions of a workflow definition."""
+    store = _get_store()
+    vs = VersionedStore(store)
+    return vs.diff(name, v1, v2)
+
+
+def workflow_export(name: str, format: str = "yaml") -> dict:
+    """Export a workflow definition as YAML or JSON."""
+    store = _get_store()
+    defn = store.get_definition(name)
+    if not defn:
+        return {"ok": False, "error": f"Workflow '{name}' not found"}
+    if format == "json":
+        return {"ok": True, "name": name, "format": "json", "data": defn.to_dict()}
+    return {"ok": True, "name": name, "format": "yaml", "yaml": dump_workflow_yaml(defn)}
+
+
+def workflow_import(yaml_content: str, as_template: bool = False) -> dict:
+    """Import a workflow from YAML content."""
+    try:
+        defn = parse_workflow_yaml(yaml_content)
+    except Exception as e:
+        return {"ok": False, "error": f"Invalid YAML: {e}"}
+    store = _get_store()
+    vs = VersionedStore(store)
+    vs.save(defn)
+    return {"ok": True, "name": defn.name, "version": defn.version, "imported": True}
+
+
+def workflow_suggest(context_messages: list[dict]) -> dict:
+    """Suggest workflows based on recent conversation messages."""
+    # Simple keyword + name match — expand with embedding similarity for production
+    store = _get_store()
+    defs = store.list_definitions()
+    suggestions = []
+    context_text = " ".join(m.get("content", "") if isinstance(m, dict) else str(m) for m in context_messages[-5:]).lower()
+    for d in defs:
+        name = d["name"].lower()
+        if name in context_text or any(word in context_text for word in name.split("_")):
+            suggestions.append({"name": d["name"], "reason": f"'{name}' matches recent conversation"})
+    return {"ok": True, "suggestions": suggestions}
+
+
+def workflow_metrics(workflow_name: str | None = None) -> dict:
+    """Return Prometheus-format metrics for workflow executions."""
+    from observability.logger import get_prometheus_metrics
+    store = _get_store()
+    metrics = get_prometheus_metrics(store)
+    if workflow_name:
+        return {
+            "ok": True,
+            "workflow": workflow_name,
+            "metrics": {k: v for k, v in metrics.items() if workflow_name in k},
+        }
+    return {"ok": True, "metrics": metrics}
+
+
+def workflow_template_save(name: str, yaml_content: str, description: str = "", tags: Optional[list[str]] = None) -> dict:
+    """Save a workflow as a reusable template."""
+    from storage.templates import TemplateRegistry
+    try:
+        path = TemplateRegistry().save(name, yaml_content, description, tags)
+        return {"ok": True, "name": name, "path": path}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def workflow_template_list() -> dict:
+    """List all saved templates."""
+    from storage.templates import TemplateRegistry
+    templates = TemplateRegistry().list()
+    return {"ok": True, "templates": templates}
+
+
+def workflow_template_load(name: str) -> dict:
+    """Load a template's YAML content."""
+    from storage.templates import TemplateRegistry
+    content = TemplateRegistry().load(name)
+    if content is None:
+        return {"ok": False, "error": f"Template '{name}' not found"}
+    return {"ok": True, "name": name, "yaml": content}
+
+
+def workflow_template_delete(name: str) -> dict:
+    """Delete a saved template."""
+    from storage.templates import TemplateRegistry
+    removed = TemplateRegistry().delete(name)
+    if not removed:
+        return {"ok": False, "error": f"Template '{name}' not found"}
+    return {"ok": True, "name": name, "deleted": True}
