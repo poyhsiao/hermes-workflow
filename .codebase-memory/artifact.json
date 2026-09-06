@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "4d19860ed772adba525be1299c56f4cfbec1fac9",
+    "indexed_at": "2026-09-06T14:54:21Z",
+    "project": "hermes-workflow-taimen",
+    "nodes": 501,
+    "edges": 1890,
+    "original_size": 2293760,
+    "compressed_size": 366653,
+    "compression_level": 9
+}

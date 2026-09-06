@@ -81,6 +81,5 @@ def validate_workflow(data: dict) -> None:
 
 
 def dump_workflow_yaml(definition: WorkflowDefinition) -> str:
-    import yaml
     data = definition.to_dict()
     return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)

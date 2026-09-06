@@ -6,6 +6,7 @@ import getpass
 import json
 import re
 import threading
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -59,7 +60,11 @@ class PermissionScope:
         return tool_name in self.allowed_tools
 
     def is_destructive(self, command: str) -> bool:
-        return any(pat.search(command) for pat in DESTRUCTIVE_PATTERNS)
+        if any(pat.search(command) for pat in DESTRUCTIVE_PATTERNS):
+            return True
+        # Detect rm/rmdir even when prefixed with harmless commands like "echo rm -rf"
+        stripped = re.sub(r"^\s*echo\s+", "", command.strip())
+        return bool(re.search(r"^\s*(rm\s+(-[rR]+[fF]?|[rR][fF])\s+|rmdir\s+)", stripped))
 
     def needs_confirmation(self, command: str) -> bool:
         return any(pat.search(command) for pat in NEED_CONFIRM_PATTERNS)
@@ -85,7 +90,6 @@ class AuditLogger:
         actor: str | None = None,
         details: dict | None = None,
     ) -> None:
-        import uuid
         with self._lock:
             self.store.db.execute(
                 self._INSERT_SQL,
