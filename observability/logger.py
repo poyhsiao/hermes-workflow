@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
+from typing import Any
 
 from storage.sqlite_store import ExecutionStore
 
@@ -41,7 +42,7 @@ class AuditLogWriter:
 
 def get_prometheus_metrics(store: ExecutionStore) -> dict:
     """Query execution stats for Prometheus exposition format."""
-    metrics = {
+    metrics: dict[str, Any] = {
         "workflow_executions_total": {},
         "workflow_execution_duration_seconds": {},
         "workflow_active_runs": 0,

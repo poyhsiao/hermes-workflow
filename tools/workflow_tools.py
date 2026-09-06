@@ -89,7 +89,6 @@ def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool"
 
 def workflow_stop(execution_id: str) -> dict:
     """Stop a running workflow execution."""
-    store = _get_store()
     with _engines_lock:
         engine = _engines.get(execution_id)
     if not engine:
@@ -126,7 +125,7 @@ def workflow_define(name: str, yaml_content: str, created_by: str | None = None)
     store = _get_store()
     try:
         defn = parse_workflow_yaml(yaml_content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
 
     defn.name = name
@@ -307,7 +306,7 @@ def workflow_import(yaml_content: str, as_template: bool = False) -> dict:
     """Import a workflow from YAML content."""
     try:
         defn = parse_workflow_yaml(yaml_content)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
     store = _get_store()
     vs = VersionedStore(store)
@@ -349,7 +348,7 @@ def workflow_template_save(name: str, yaml_content: str, description: str = "", 
     try:
         path = TemplateRegistry().save(name, yaml_content, description, tags)
         return {"ok": True, "name": name, "path": path}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
 
 

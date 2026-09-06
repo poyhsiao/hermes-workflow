@@ -72,7 +72,7 @@ class WorkflowContext:
 
     def resolve_args(self, args: dict) -> dict:
         """Resolve {{ var }} placeholders in all string values of args dict."""
-        resolved = {}
+        resolved: dict[str, Any] = {}
         for k, v in args.items():
             if isinstance(v, str):
                 resolved[k] = self.resolve_var(v)

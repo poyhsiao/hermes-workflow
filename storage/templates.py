@@ -24,7 +24,7 @@ class TemplateRegistry:
         path = self.template_dir / f"{safe_name}.yaml"
         meta_path = self.template_dir / f"{safe_name}.meta.json"
         path.write_text(yaml_content)
-        meta = {"name": name, "description": description, "tags": tags or [], "saved_at": str(Path(path.stat().st_mtime))}
+        meta = {"name": name, "description": description, "tags": tags or [], "saved_at": str(path.stat().st_mtime)}
         meta_path.write_text(json.dumps(meta, indent=2))
         return str(path)
 

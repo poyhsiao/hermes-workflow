@@ -76,7 +76,7 @@ def add_workflow_parser(subparsers) -> None:
 
 def _dispatch_workflow(args) -> dict[str, Any]:
     """Route parsed CLI args to workflow tools."""
-    dispatcher = WorkflowSlashDispatcher(wt)
+    _ = WorkflowSlashDispatcher(wt)
     verb = getattr(args, "workflow_verb", None)
 
     if verb == "run":

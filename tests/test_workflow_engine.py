@@ -144,7 +144,7 @@ def test_workflow_context_checkpoint_and_rollback():
     snap1 = ctx.checkpoint(step_index=0, metadata={"label": "after_step1"})
     ctx.set("counter", 2)
     ctx.push("out2")
-    snap2 = ctx.checkpoint(step_index=1, metadata={"label": "after_step2"})
+    _snap2 = ctx.checkpoint(step_index=1, metadata={"label": "after_step2"})
 
     # Rollback to snap1
     ctx.rollback_to(snap1)

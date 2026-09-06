@@ -173,7 +173,7 @@ class ExecutionStore:
             try:
                 parsed = yaml.safe_load(d.get("definition_yaml") or "")
                 d["description"] = (parsed or {}).get("description", "")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 d["description"] = ""
             results.append(d)
         return results
@@ -267,7 +267,7 @@ class ExecutionStore:
 
     def update_step(self, step_id: str, status: str | None = None, output_json: str | None = None, error: str | None = None, retry_count: int | None = None, checkpoint_json: str | None = None, started_at: str | None = None, ended_at: str | None = None) -> None:
         fields = []
-        vals = []
+        vals: list = []
         if status is not None:
             fields.append("status=?")
             vals.append(status)
