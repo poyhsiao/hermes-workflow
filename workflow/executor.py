@@ -83,8 +83,8 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> 
 
     try:
         from tools.delegate_tool import delegate_task
-    except Exception:  # noqa: BLE001
-        raise RuntimeError(f"Step '{step.name}': delegate_task not available in Hermes")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Step '{step.name}': delegate_task not available in Hermes") from e
 
     result = delegate_task(
         profile=resolved_profile or "default",

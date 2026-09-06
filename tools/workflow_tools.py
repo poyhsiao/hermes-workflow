@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from storage.sqlite_store import ExecutionStore
-from workflow.context import WorkflowContext as WC
+from workflow.context import WorkflowContext as WfCtx
 from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
@@ -61,7 +61,7 @@ def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool"
         triggered_by_user=triggered_by_user,
     )
 
-    ctx = WC(workflow_id=name, execution_id=exec_id)
+    ctx = WfCtx(workflow_id=name, execution_id=exec_id)
     for k, v in context.items():
         ctx.set(k, v)
 
@@ -241,7 +241,7 @@ def workflow_rollback(
 
     # Restore context from checkpoint or start fresh
     if checkpoint:
-        ctx = WC(
+        ctx = WfCtx(
             workflow_id=record.workflow_id,
             execution_id=new_exec_id,
             shared=dict(checkpoint.get("shared", {})),
@@ -249,7 +249,7 @@ def workflow_rollback(
             events=list(checkpoint.get("events", [])),
         )
     else:
-        ctx = WC(workflow_id=record.workflow_id, execution_id=new_exec_id)
+        ctx = WfCtx(workflow_id=record.workflow_id, execution_id=new_exec_id)
 
     store.create_execution(new_record, ctx.to_json())
 
