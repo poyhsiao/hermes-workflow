@@ -67,10 +67,10 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
             raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
         if scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
-        # Block command substitution operators to prevent injection via $(...) or `...`
-        if re.search(r"\$\(|[`]", cmd):
-            raise PermissionError(f"Step '{step.name}': command contains disallowed substitution syntax")
-        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300, check=False)
+        # Block shell operators that enable command injection: substitution, chaining, redirection
+        if re.search(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<", cmd):
+            raise PermissionError(f"Step '{step.name}': command contains disallowed shell operators")
+        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
     # Store result in context
