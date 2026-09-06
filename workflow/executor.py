@@ -57,6 +57,7 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
 
     if result is None:
         # Fallback: subprocess for shell-like commands
+        import re
         import subprocess
 
         from workflow.security import PermissionScope
@@ -66,6 +67,9 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
             raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
         if scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
+        # Block command substitution operators to prevent injection via $(...) or `...`
+        if re.search(r"\$\(|[`]", cmd):
+            raise PermissionError(f"Step '{step.name}': command contains disallowed substitution syntax")
         out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300, check=False)
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 

@@ -161,10 +161,12 @@ class ExecutionStore:
         return parse_workflow_yaml(row["definition_yaml"])
 
     def list_definitions(self, include_templates: bool = False) -> list[dict]:
-        query = "SELECT id, name, version, created_at, updated_at, is_template FROM workflow_definitions"
-        if not include_templates:
-            query += " WHERE is_template=0"
-        rows = self.db.execute(query + " ORDER BY updated_at DESC").fetchall()
+        # Use conditional query to avoid string concatenation (SQL injection pattern flagged by static analysis)
+        if include_templates:
+            query = "SELECT id, name, version, created_at, updated_at, is_template FROM workflow_definitions ORDER BY updated_at DESC"
+        else:
+            query = "SELECT id, name, version, created_at, updated_at, is_template FROM workflow_definitions WHERE is_template=0 ORDER BY updated_at DESC"
+        rows = self.db.execute(query).fetchall()
         results = []
         for r in rows:
             d = dict(r)
@@ -266,33 +268,35 @@ class ExecutionStore:
         return step_id
 
     def update_step(self, step_id: str, status: str | None = None, output_json: str | None = None, error: str | None = None, retry_count: int | None = None, checkpoint_json: str | None = None, started_at: str | None = None, ended_at: str | None = None) -> None:
-        fields = []
-        vals: list = []
+        # Build SET clause from known column names only (hardcoded, no user input)
+        set_clauses: list[str] = []
+        params: list = []
         if status is not None:
-            fields.append("status=?")
-            vals.append(status)
+            set_clauses.append("status=?")
+            params.append(status)
         if output_json is not None:
-            fields.append("output_json=?")
-            vals.append(output_json)
+            set_clauses.append("output_json=?")
+            params.append(output_json)
         if error is not None:
-            fields.append("error=?")
-            vals.append(error)
+            set_clauses.append("error=?")
+            params.append(error)
         if retry_count is not None:
-            fields.append("retry_count=?")
-            vals.append(retry_count)
+            set_clauses.append("retry_count=?")
+            params.append(retry_count)
         if checkpoint_json is not None:
-            fields.append("checkpoint_json=?")
-            vals.append(checkpoint_json)
+            set_clauses.append("checkpoint_json=?")
+            params.append(checkpoint_json)
         if started_at is not None:
-            fields.append("started_at=?")
-            vals.append(started_at)
+            set_clauses.append("started_at=?")
+            params.append(started_at)
         if ended_at is not None:
-            fields.append("ended_at=?")
-            vals.append(ended_at)
-        if not fields:
+            set_clauses.append("ended_at=?")
+            params.append(ended_at)
+        if not set_clauses:
             return
-        vals.append(step_id)
-        self.db.execute(f"UPDATE execution_steps SET {', '.join(fields)} WHERE id=?", vals)
+        params.append(step_id)
+        # Parameterized query; set_clauses contains only hardcoded column names from known set
+        self.db.execute(f"UPDATE execution_steps SET {', '.join(set_clauses)} WHERE id=?", params)  # noqa: S610
         self.db.commit()
 
     def get_steps(self, exec_id: str) -> list[dict]:
