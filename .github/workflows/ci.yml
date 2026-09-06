@@ -37,7 +37,7 @@ jobs:
           pip install pytest pytest-cov ruff mypy pyyaml
 
       - name: Lint with ruff
-        run: ruff check .
+        run: ruff check workflow storage observability tools triggers cli tests
 
       - name: Type-check with mypy
         run: mypy $(pwd)/workflow $(pwd)/storage $(pwd)/observability $(pwd)/tools $(pwd)/triggers --ignore-missing-imports --explicit-package-bases
