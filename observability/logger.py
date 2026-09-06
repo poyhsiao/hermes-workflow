@@ -72,16 +72,17 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
         cnt = r["count"]
         metrics["workflow_executions_total"][f"{{workflow=\"{wf}\",status=\"{status}\"}}"] = cnt
         if status == "running":
-            active = cnt
+            active += cnt
         if r["avg_duration"] is not None:
-            metrics["workflow_execution_duration_seconds"][f"{{workflow=\"{wf}\"}}"] = round(r["avg_duration"], 2)
+            metrics["workflow_execution_duration_seconds"][f"{{workflow=\"{wf}\",status=\"{status}\"}}"] = round(r["avg_duration"], 2)
 
     metrics["workflow_active_runs"] = active
 
     retry_rows = store.db.execute("""
-        SELECT workflow_id, SUM(retry_count) as total_retries
-        FROM execution_steps
-        GROUP BY execution_id IN (SELECT id FROM workflow_executions WHERE workflow_id IS NOT NULL)
+        SELECT we.workflow_id, SUM(es.retry_count) as total_retries
+        FROM execution_steps es
+        JOIN workflow_executions we ON es.execution_id = we.id
+        GROUP BY we.workflow_id
     """).fetchall()
 
     for r in retry_rows:
