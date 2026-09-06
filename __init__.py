@@ -8,9 +8,6 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 
 from __future__ import annotations
 
-import os
-import sys
-
 # ── Plugin manifest ──────────────────────────────────────────────────────────────
 
 
@@ -20,15 +17,14 @@ __plugin_name__ = "hermes-dynamic-workflow"
 # ── Hermes plugin entry point ───────────────────────────────────────────────────
 
 
-def register(plugin_ctx: "PluginContext") -> None:
+def register(plugin_ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
     """
     Called by Hermes PluginManager on discovery.
     Register all hooks, tools, and CLI commands here.
     """
     # Import here to avoid hard dep at import time (Hermes may not be fully loaded)
-    import tools.workflow_tools as wt
     import cli.workflow_commands as wc
-    import triggers.intent_detector as idet
+    import tools.workflow_tools as wt
 
     # ── Register tools ────────────────────────────────────────────────────────
     for tool_fn in [
@@ -68,7 +64,7 @@ def register(plugin_ctx: "PluginContext") -> None:
 # ── Hooks ─────────────────────────────────────────────────────────────────────
 
 
-def _pre_llm_hook(hook_ctx: "HookContext") -> None:
+def _pre_llm_hook(hook_ctx: "HookContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
     """pre_llm_call: detect workflow intent from conversation and suggest."""
     messages = getattr(hook_ctx, "messages", [])
     if not messages:
@@ -82,14 +78,14 @@ def _pre_llm_hook(hook_ctx: "HookContext") -> None:
             hook_ctx.add_system_message(msg)
 
 
-def _on_message_hook(hook_ctx: "HookContext") -> None:
+def _on_message_hook(hook_ctx: "HookContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
     """on_message: detect /workflow slash command and dispatch."""
     content = getattr(hook_ctx, "content", "") or ""
     if not content.startswith("/workflow"):
         return
 
-    from triggers.slash_command import WorkflowSlashDispatcher
     import tools.workflow_tools as wt
+    from triggers.slash_command import WorkflowSlashDispatcher
 
     dispatcher = WorkflowSlashDispatcher(wt)
     result = dispatcher.dispatch(content)

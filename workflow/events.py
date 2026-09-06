@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List
-import threading
+from typing import Any
 
 
 @dataclass
@@ -20,15 +21,15 @@ class WorkflowEvent:
 class EventBus:
     """In-process pub/sub for workflow events."""
 
-    _instance: "EventBus | None" = None
+    _instance: EventBus | None = None
     _lock = threading.Lock()
 
     def __init__(self):
-        self._subscribers: Dict[str, List[Callable[[WorkflowEvent], None]]] = {}
+        self._subscribers: dict[str, list[Callable[[WorkflowEvent], None]]] = {}
         self._sub_lock = threading.Lock()
 
     @classmethod
-    def get_instance(cls) -> "EventBus":
+    def get_instance(cls) -> EventBus:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -52,7 +53,7 @@ class EventBus:
         for cb in callbacks:
             try:
                 cb(event)
-            except Exception:
+            except Exception:  # noqa: BLE001,S110
                 pass  # Don't let subscriber errors break the bus
 
     def emit(self, workflow_id: str, execution_id: str, event_name: str, payload: Any = None) -> None:

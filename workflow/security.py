@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import re
 import getpass
-from datetime import datetime, timezone
-from typing import Any, Optional
 import json
+import re
 import threading
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from storage.sqlite_store import ExecutionStore
 
 # ── Destructive operation patterns ──────────────────────────────────────────────
 
@@ -36,9 +39,9 @@ class PermissionScope:
 
     def __init__(
         self,
-        user: Optional[str] = None,
-        allowed_tools: Optional[list[str]] = None,
-        blocked_tools: Optional[list[str]] = None,
+        user: str | None = None,
+        allowed_tools: list[str] | None = None,
+        blocked_tools: list[str] | None = None,
         max_duration: int = 0,
         max_parallel_branches: int = 4,
     ):
@@ -70,7 +73,7 @@ class AuditLogger:
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """
 
-    def __init__(self, store: "ExecutionStore"):
+    def __init__(self, store: ExecutionStore):
         self.store = store
         self._lock = threading.Lock()
 
@@ -78,9 +81,9 @@ class AuditLogger:
         self,
         execution_id: str,
         action: str,
-        step_id: Optional[str] = None,
-        actor: Optional[str] = None,
-        details: Optional[dict] = None,
+        step_id: str | None = None,
+        actor: str | None = None,
+        details: dict | None = None,
     ) -> None:
         import uuid
         with self._lock:

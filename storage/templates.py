@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from pathlib import Path
-from typing import Optional
 
 DEFAULT_TEMPLATE_DIR = Path.home() / ".hermes" / "workflow_templates"
 
@@ -13,14 +11,18 @@ DEFAULT_TEMPLATE_DIR = Path.home() / ".hermes" / "workflow_templates"
 class TemplateRegistry:
     """Manages workflow templates stored on disk."""
 
-    def __init__(self, template_dir: Optional[Path] = None):
+    def __init__(self, template_dir: Path | None = None):
         self.template_dir = (template_dir or DEFAULT_TEMPLATE_DIR)
         self.template_dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, name: str, yaml_content: str, description: str = "", tags: Optional[list[str]] = None) -> str:
+    def save(self, name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> str:
         """Save a workflow as a template file."""
-        path = self.template_dir / f"{name}.yaml"
-        meta_path = self.template_dir / f"{name}.meta.json"
+        # Prevent path traversal
+        safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_").strip()
+        if not safe_name:
+            raise ValueError(f"Invalid template name: {name!r}")
+        path = self.template_dir / f"{safe_name}.yaml"
+        meta_path = self.template_dir / f"{safe_name}.meta.json"
         path.write_text(yaml_content)
         meta = {"name": name, "description": description, "tags": tags or [], "saved_at": str(Path(path.stat().st_mtime))}
         meta_path.write_text(json.dumps(meta, indent=2))
@@ -39,17 +41,25 @@ class TemplateRegistry:
             templates.append(meta)
         return templates
 
-    def load(self, name: str) -> Optional[str]:
+    def _safe_name(self, name: str) -> str:
+        """Normalize name to prevent path traversal."""
+        safe = name.replace("..", "").replace("/", "_").replace("\\", "_").strip()
+        if not safe:
+            raise ValueError(f"Invalid template name: {name!r}")
+        return safe
+
+    def load(self, name: str) -> str | None:
         """Load template YAML content by name."""
-        path = self.template_dir / f"{name}.yaml"
+        path = self.template_dir / f"{self._safe_name(name)}.yaml"
         if not path.exists():
             return None
         return path.read_text()
 
     def delete(self, name: str) -> bool:
         """Delete a template by name."""
-        yaml_path = self.template_dir / f"{name}.yaml"
-        meta_path = self.template_dir / f"{name}.meta.json"
+        safe = self._safe_name(name)
+        yaml_path = self.template_dir / f"{safe}.yaml"
+        meta_path = self.template_dir / f"{safe}.meta.json"
         removed = False
         if yaml_path.exists():
             yaml_path.unlink()
@@ -71,7 +81,7 @@ class TemplateRegistry:
             count += 1
         return count
 
-    def import_from_file(self, file_path: str, name: Optional[str] = None) -> str:
+    def import_from_file(self, file_path: str, name: str | None = None) -> str:
         """Import a template from a YAML file."""
         src = Path(file_path)
         template_name = name or src.stem

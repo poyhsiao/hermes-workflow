@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 import json
 import subprocess
+import sys
 from typing import Any
 
-from triggers.slash_command import WorkflowSlashDispatcher
 import tools.workflow_tools as wt
+from triggers.slash_command import WorkflowSlashDispatcher
 
 
 def add_workflow_parser(subparsers) -> None:
@@ -92,7 +92,8 @@ def _dispatch_workflow(args) -> dict[str, Any]:
         name = args.name
         result = wt.workflow_show(name) if wt.workflow_show(name).get("ok") else {"ok": True, "yaml": f"# New workflow: {name}\n" + ("name: " + name + "\nversion: 1\ndescription: \"\"\nsteps: []\n")}
         # Write to temp file and open editor
-        import tempfile, os
+        import os
+        import tempfile
         fd, path = tempfile.mkstemp(suffix=".yaml")
         with os.fdopen(fd, "w") as f:
             f.write(result.get("yaml", ""))

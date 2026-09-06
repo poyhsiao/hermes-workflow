@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any, Optional
 
 # ── OpenTelemetry integration ──────────────────────────────────────────────────
 # Try to use real OTel if available, otherwise no-op stub
 
 try:
     from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.trace import Status, StatusCode
 
     _provider = TracerProvider(resource=Resource.create({"service.name": "hermes-dynamic-workflow"}))
@@ -25,7 +24,7 @@ try:
         return _tracer.start_as_current_span(f"step/{step_name}", attributes={"step_type": step_type, "execution_id": execution_id})
 
     @contextmanager
-    def span(name: str, attrs: Optional[dict] = None):
+    def span(name: str, attrs: dict | None = None):
         with _tracer.start_as_current_span(name, attributes=attrs or {}) as s:
             try:
                 yield s
@@ -47,5 +46,5 @@ except ImportError:
         yield
 
     @contextmanager
-    def span(name: str, attrs: Optional[dict] = None):
+    def span(name: str, attrs: dict | None = None):
         yield

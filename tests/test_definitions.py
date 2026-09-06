@@ -1,10 +1,18 @@
 """Tests for SQLite storage."""
 
-import pytest
-import tempfile
 import os
-from workflow.core import ExecutionRecord, ExecutionStatus, ConcurrencyMode, ErrorPolicy, RollbackPolicy
+import tempfile
+
+import pytest
+
 from storage.sqlite_store import ExecutionStore
+from workflow.core import (
+    ConcurrencyMode,
+    ErrorPolicy,
+    ExecutionRecord,
+    ExecutionStatus,
+    RollbackPolicy,
+)
 
 
 @pytest.fixture
@@ -93,7 +101,6 @@ def test_checkpoint_save_and_restore(store):
     store.create_execution(record)
 
     store.save_step("exec-cp", 0, "s1", "tool")
-    import json
     store.save_checkpoint("exec-cp", 0, {"shared": {"x": 1}, "pipeline": ["out1"]})
 
     cp = store.get_last_checkpoint("exec-cp")

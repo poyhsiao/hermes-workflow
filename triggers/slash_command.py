@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any
-
+from typing import Any, ClassVar
 
 # ── Built-in template YAML ───────────────────────────────────────────────────
 
@@ -39,7 +37,7 @@ steps:
 class WorkflowSlashDispatcher:
     """Parses /workflow <verb> ... arguments and calls appropriate tool function."""
 
-    VERBS = {
+    VERBS: ClassVar[dict[str, str]] = {
         "run": "_handle_run",
         "define": "_handle_define",
         "list": "_handle_list",
@@ -66,7 +64,7 @@ class WorkflowSlashDispatcher:
         verb = tokens[1]
         handler = self.VERBS.get(verb)
         if not handler:
-            return {"ok": False, "error": f"Unknown verb '{verb}'. Available: {', '.join(self.VERBS.keys)}"}
+            return {"ok": False, "error": f"Unknown verb '{verb}'. Available: {', '.join(self.VERBS.keys())}"}
         return getattr(self, handler)(tokens[2:])
 
     # ── Handlers ─────────────────────────────────────────────────────────────────

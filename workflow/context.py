@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
-from typing import Any, Optional
 import json
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -38,7 +38,7 @@ class WorkflowContext:
     def emit_event(self, name: str, payload: Any = None) -> None:
         self.events.append({"name": name, "payload": payload})
 
-    def checkpoint(self, step_index: int, metadata: Optional[dict] = None) -> dict:
+    def checkpoint(self, step_index: int, metadata: dict | None = None) -> dict:
         snap = {
             "step_index": step_index,
             "shared": copy.deepcopy(self.shared),
@@ -54,9 +54,10 @@ class WorkflowContext:
         self.pipeline = list(checkpoint.get("pipeline", []))
         self.events = list(checkpoint.get("events", []))
         # Trim checkpoints after the rollback point
-        idx = self.checkpoints.index(checkpoint) if checkpoint in self.checkpoints else -1
-        if idx >= 0:
-            self.checkpoints = self.checkpoints[: idx + 1]
+        for idx, cp in enumerate(self.checkpoints):
+            if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get("shared"):
+                self.checkpoints = self.checkpoints[: idx + 1]
+                break
 
     def resolve_var(self, template: str) -> str:
         """Simple {{ var }} substitution from shared context."""
@@ -93,7 +94,7 @@ class WorkflowContext:
         }, default=str)
 
     @classmethod
-    def from_json(cls, json_str: str) -> "WorkflowContext":
+    def from_json(cls, json_str: str) -> WorkflowContext:
         data = json.loads(json_str)
         ctx = cls(
             workflow_id=data["workflow_id"],

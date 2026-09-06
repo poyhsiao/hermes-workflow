@@ -2,30 +2,24 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
 
+from storage.sqlite_store import ExecutionStore
+from workflow.context import WorkflowContext as WC
 from workflow.core import (
-    ConcurrencyMode,
-    ErrorPolicy,
     ExecutionRecord,
     ExecutionStatus,
-    RollbackPolicy,
-    WorkflowDefinition,
     WorkflowEngine,
 )
-from workflow.context import WorkflowContext as WC
 from workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
 from workflow.executor import execute_steps
 from workflow.security import AuditLogger
 from workflow.versioned_store import VersionedStore
-from storage.sqlite_store import ExecutionStore
 
 # Global store + running engines (thread-safe)
-_store: Optional[ExecutionStore] = None
+_store: ExecutionStore | None = None
 _engines: dict[str, WorkflowEngine] = {}
 _engines_lock = threading.Lock()
 
@@ -180,6 +174,8 @@ def workflow_history(workflow_name: str | None = None, limit: int = 50) -> dict:
         row = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (workflow_name,)).fetchone()
         if row:
             wf_id = row["id"]
+        else:
+            return {"ok": False, "error": f"Workflow '{workflow_name}' not found"}
     rows = store.list_executions(workflow_id=wf_id, limit=limit)
     return {"ok": True, "executions": rows}
 
@@ -347,7 +343,7 @@ def workflow_metrics(workflow_name: str | None = None) -> dict:
     return {"ok": True, "metrics": metrics}
 
 
-def workflow_template_save(name: str, yaml_content: str, description: str = "", tags: Optional[list[str]] = None) -> dict:
+def workflow_template_save(name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> dict:
     """Save a workflow as a reusable template."""
     from storage.templates import TemplateRegistry
     try:

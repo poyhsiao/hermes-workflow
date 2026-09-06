@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import yaml
-from typing import Any
+
 from workflow.core import WorkflowDefinition
 
 

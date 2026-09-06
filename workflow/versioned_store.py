@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import difflib
-from typing import Optional
 
-from workflow.core import WorkflowDefinition
 from storage.sqlite_store import ExecutionStore
+from workflow.core import WorkflowDefinition
 
 
 class VersionedStore:
@@ -14,7 +13,7 @@ class VersionedStore:
     def __init__(self, store: ExecutionStore):
         self.store = store
 
-    def save(self, defn: WorkflowDefinition, changed_by: Optional[str] = None, change_summary: str = "") -> None:
+    def save(self, defn: WorkflowDefinition, changed_by: str | None = None, change_summary: str = "") -> None:
         """Save a new version of an existing workflow."""
         existing = self.store.db.execute(
             "SELECT id FROM workflow_definitions WHERE name=?", (defn.name,)
@@ -24,7 +23,7 @@ class VersionedStore:
         else:
             self.store.save_definition(defn, changed_by)
 
-    def get(self, name: str, version: Optional[int] = None) -> Optional[WorkflowDefinition]:
+    def get(self, name: str, version: int | None = None) -> WorkflowDefinition | None:
         """Get a specific version, or latest if version is None."""
         if version is not None:
             existing = self.store.db.execute(
@@ -44,7 +43,7 @@ class VersionedStore:
             return []
         return self.store.list_versions(existing["id"])
 
-    def rollback_definition(self, name: str, to_version: int, changed_by: Optional[str] = None) -> Optional[WorkflowDefinition]:
+    def rollback_definition(self, name: str, to_version: int, changed_by: str | None = None) -> WorkflowDefinition | None:
         """Rollback a workflow definition to a prior version."""
         old_defn = self.get(name, to_version)
         if not old_defn:

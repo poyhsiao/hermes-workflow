@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import uuid
-import copy
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING
+
+from workflow.context import WorkflowContext
+
+if TYPE_CHECKING:
+    from storage.sqlite_store import ExecutionStore
 
 # ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +72,7 @@ class RetryConfig:
     initial_delay: float = 1.0
 
     @classmethod
-    def from_dict(cls, d: Optional[dict]) -> Optional[RetryConfig]:
+    def from_dict(cls, d: dict | None) -> RetryConfig | None:
         if not d:
             return None
         return cls(**d)
@@ -81,7 +84,7 @@ class CompensateConfig:
     args: dict
 
     @classmethod
-    def from_dict(cls, d: Optional[dict]) -> Optional[CompensateConfig]:
+    def from_dict(cls, d: dict | None) -> CompensateConfig | None:
         if not d:
             return None
         return cls(**d)
@@ -90,7 +93,7 @@ class CompensateConfig:
 @dataclass
 class ParallelBranch:
     name: str
-    steps: list["Step"]
+    steps: list[Step]
 
 
 @dataclass
@@ -100,12 +103,12 @@ class Step:
     args: dict = field(default_factory=dict)
     requires: list[str] = field(default_factory=list)
     on_error: StepErrorAction = StepErrorAction.STOP
-    retry: Optional[RetryConfig] = None
-    compensate: Optional[CompensateConfig] = None
-    agent_profile: Optional[str] = None
-    agent_goal: Optional[str] = None
-    branches: Optional[list[ParallelBranch]] = None
-    event_name: Optional[str] = None
+    retry: RetryConfig | None = None
+    compensate: CompensateConfig | None = None
+    agent_profile: str | None = None
+    agent_goal: str | None = None
+    branches: list[ParallelBranch] | None = None
+    event_name: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> Step:
@@ -192,9 +195,9 @@ class ExecutionRecord:
     error_policy: ErrorPolicy
     rollback_policy: RollbackPolicy
     started_at: str
-    ended_at: Optional[str] = None
+    ended_at: str | None = None
     triggered_by: str = "manual"
-    triggered_by_user: Optional[str] = None
+    triggered_by_user: str | None = None
     current_step_index: int = 0
 
     def to_dict(self) -> dict:
@@ -224,9 +227,9 @@ class WorkflowEngine:
     def __init__(
         self,
         definition: WorkflowDefinition,
-        context: "WorkflowContext",
+        context: WorkflowContext,
         record: ExecutionRecord,
-        store: "ExecutionStore",
+        store: ExecutionStore,
     ):
         self.definition = definition
         self.context = context

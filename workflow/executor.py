@@ -7,8 +7,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
+from observability.trace import trace_step
+from workflow.context import WorkflowContext
 from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
@@ -16,11 +18,15 @@ from workflow.core import (
     Step,
     StepType,
 )
-from workflow.context import WorkflowContext
 from workflow.error_handling import ErrorAction, strategy_for
-from workflow.events import STEP_COMPLETED, STEP_FAILED, STEP_RETRIED, STEP_STARTED, EventBus, WorkflowEvent
-from observability.trace import trace_step, span
-from workflow.security import AuditLogger, PermissionScope
+from workflow.events import (
+    STEP_COMPLETED,
+    STEP_FAILED,
+    STEP_RETRIED,
+    STEP_STARTED,
+    EventBus,
+)
+from workflow.security import AuditLogger
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
@@ -51,9 +57,13 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
     if result is None:
         # Fallback: subprocess for shell-like commands
         import subprocess
+        from workflow.security import PermissionScope
+        scope = PermissionScope()
         cmd = resolved_args.get("command") or resolved_args.get("cmd", "")
         if not cmd:
             raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
+        if scope.is_destructive(cmd):
+            raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
         out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
@@ -166,9 +176,9 @@ def execute_steps(
     definition,
     ctx: WorkflowContext,
     record: ExecutionRecord,
-    store: "ExecutionStore",
+    store: ExecutionStore,
     audit: AuditLogger,
-    stop_event: Optional[threading.Event] = None,
+    stop_event: threading.Event | None = None,
     resume_from_step: int = 0,
 ) -> ExecutionStatus:
     """Execute all steps of a workflow according to dependency graph.
@@ -180,8 +190,8 @@ def execute_steps(
     # Build dependency graph
     step_map = {s.name: s for s in definition.steps}
     completed = set()
-    failed_step: Optional[str] = None
-    error: Optional[Exception] = None
+    failed_step: str | None = None
+    error: Exception | None = None
     workflow_started_at = datetime.now(timezone.utc)
 
     # ponytail: resume support — pre-mark earlier steps as completed
@@ -254,10 +264,9 @@ def execute_steps(
                     completed.add(step.name)
                     done = True
                 except Exception as e:
-                    error = e
                     action = strategy.decide(step, e)
 
-                    if action == ErrorAction.RETRY and strategy.should_retry(attempt):
+                    if action == ErrorAction.RETRY and strategy.should_retry(attempt + 1):
                         attempt += 1
                         store.update_step(step_id, retry_count=attempt)
                         event_bus = EventBus.get_instance()
@@ -311,7 +320,7 @@ def execute_steps(
     return record.status
 
 
-def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: "ExecutionStore", audit: AuditLogger):
+def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger):
     """Perform rollback to last checkpoint (checkpoint + saga compensate)."""
     if record.rollback_policy.value == "saga":
         # Execute compensate functions in reverse order for completed steps
@@ -325,7 +334,7 @@ def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: "Executio
                 step = Step(
                     name=s["step_name"],
                     step_type=StepType.TOOL,
-                    args=compensate.get("args", {}),
+                    args={**(compensate.get("args", {})), "tool": compensate.get("tool", "")},
                 )
                 try:
                     execute_tool_step(step, ctx, audit)

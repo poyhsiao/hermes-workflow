@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
-from typing import Optional
 
 from storage.sqlite_store import ExecutionStore
 
@@ -25,12 +24,13 @@ class AuditLogWriter:
         self,
         execution_id: str,
         action: str,
-        step_id: Optional[str] = None,
-        actor: Optional[str] = None,
-        details: Optional[dict] = None,
+        step_id: str | None = None,
+        actor: str | None = None,
+        details: dict | None = None,
     ) -> None:
-        import uuid, getpass
+        import getpass
         import json as _json
+        import uuid
         with self._lock:
             self.store.db.execute(
                 self._INSERT,
