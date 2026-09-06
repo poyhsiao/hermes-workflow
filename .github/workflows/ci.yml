@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main, poyhsiao/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov ruff mypy pyyaml
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Type-check with mypy
+        run: mypy workflow storage observability tools triggers --ignore-missing-imports
+
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ \
+            --cov=workflow \
+            --cov=storage \
+            --cov=observability \
+            --cov=tools \
+            --cov=triggers \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.12'
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  build-check:
+    name: Build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Verify plugin.yaml loads
+        run: |
+          python -c "
+          import yaml
+          with open('plugin.yaml') as f:
+              data = yaml.safe_load(f)
+          assert 'name' in data
+          assert 'version' in data
+          assert 'tools' in data
+          print(f'plugin.yaml valid: {data[\"name\"]} v{data[\"version\"]}')
+          print(f'Tools registered: {len(data[\"tools\"])}')
+          "
+
+      - name: Verify all Python modules importable
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          import workflow.core
+          import workflow.executor
+          import workflow.context
+          import workflow.definitions
+          import workflow.error_handling
+          import workflow.events
+          import workflow.security
+          import workflow.versioned_store
+          import storage.sqlite_store
+          import storage.templates
+          import observability.logger
+          import observability.trace
+          import tools.workflow_tools
+          import triggers.slash_command
+          import triggers.intent_detector
+          print('All modules importable')
+          "
