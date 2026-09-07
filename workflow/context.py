@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-import json
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,49 +18,63 @@ class WorkflowContext:
     pipeline: list[Any] = field(default_factory=list)
     checkpoints: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
+    # ponytail: lock for thread-safe writes in parallel branches
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set(self, key: str, value: Any) -> None:
-        self.shared[key] = value
+        with self._lock:
+            self.shared[key] = value
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.shared.get(key, default)
 
     def push(self, value: Any) -> None:
         """Append to pipeline (pipe output from previous step)."""
-        self.pipeline.append(value)
+        with self._lock:
+            self.pipeline.append(value)
 
     def pop(self) -> Any:
-        return self.pipeline.pop() if self.pipeline else None
+        with self._lock:
+            return self.pipeline.pop() if self.pipeline else None
 
     def last_output(self) -> Any:
         return self.pipeline[-1] if self.pipeline else None
 
     def emit_event(self, name: str, payload: Any = None) -> None:
-        self.events.append({"name": name, "payload": payload})
+        with self._lock:
+            self.events.append({"name": name, "payload": payload})
 
     def checkpoint(self, step_index: int, metadata: dict | None = None) -> dict:
-        snap = {
-            "step_index": step_index,
-            "shared": copy.deepcopy(self.shared),
-            "pipeline": list(self.pipeline),
-            "events": list(self.events),
-            "metadata": metadata or {},
-        }
-        self.checkpoints.append(snap)
-        return snap
+        with self._lock:
+            snap = {
+                "step_index": step_index,
+                "shared": copy.deepcopy(self.shared),
+                "pipeline": list(self.pipeline),
+                "events": list(self.events),
+                "metadata": metadata or {},
+            }
+            self.checkpoints.append(snap)
+            return snap
 
     def rollback_to(self, checkpoint: dict) -> None:
-        self.shared = copy.deepcopy(checkpoint.get("shared", {}))
-        self.pipeline = list(checkpoint.get("pipeline", []))
-        self.events = list(checkpoint.get("events", []))
-        # Trim checkpoints after the rollback point
-        for idx, cp in enumerate(self.checkpoints):
-            if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get("shared"):
-                self.checkpoints = self.checkpoints[: idx + 1]
-                break
+        with self._lock:
+            self.shared = copy.deepcopy(checkpoint.get("shared", {}))
+            self.pipeline = list(checkpoint.get("pipeline", []))
+            self.events = list(checkpoint.get("events", []))
+            # Trim checkpoints after the rollback point
+            for idx, cp in enumerate(self.checkpoints):
+                if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get("shared"):
+                    self.checkpoints = self.checkpoints[: idx + 1]
+                    break
 
     def resolve_var(self, template: str) -> str:
-        """Simple {{ var }} substitution from shared context."""
+        """Simple {{ var }} substitution from shared context.
+
+        Shell-context only: escapes $ ` ; & | < > " ' \\ and newlines
+        to prevent command injection when the result is interpolated into
+        a shell command. For non-shell uses (LLM prompts, SQL, HTML, file
+        paths), use resolve_var_raw() instead.
+        """
         if not isinstance(template, str):
             return template
         result = template
@@ -68,10 +82,35 @@ class WorkflowContext:
             placeholder = "{{ " + key + " }}"
             if placeholder in result:
                 replacement = str(val)
-                # Escape shell metacharacters that enable injection after substitution
-                for ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'", "\n"):
-                    replacement = replacement.replace(ch, "\\" + ch)
-                result = result.replace(placeholder, replacement)
+                # ponytail: single-pass escaping — sequential replace() calls cascade
+                # when earlier escapes add \ chars (e.g. \$ -> \\$ -> \\\$) so we scan
+                # once and build the escaped string directly.
+                escaped: list[str] = []
+                for ch in replacement:
+                    if ch == "\\":
+                        escaped.append("\\\\")  # \\ -> \\\\
+                    elif ch == "\n":
+                        escaped.append("\\n")   # newline -> literal \n
+                    elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
+                        escaped.append("\\" + ch)
+                    else:
+                        escaped.append(ch)
+                result = result.replace(placeholder, "".join(escaped))
+        return result
+
+    def resolve_var_raw(self, template: str) -> str:
+        """{{ var }} substitution without any escaping.
+
+        Use for non-shell contexts (LLM prompts, SQL, HTML, file paths).
+        Callers are responsible for context-appropriate encoding.
+        """
+        if not isinstance(template, str):
+            return template
+        result = template
+        for key, val in self.shared.items():
+            placeholder = "{{ " + key + " }}"
+            if placeholder in result:
+                result = result.replace(placeholder, str(val))
         return result
 
     def resolve_args(self, args: dict) -> dict:
@@ -83,28 +122,7 @@ class WorkflowContext:
             elif isinstance(v, dict):
                 resolved[k] = self.resolve_args(v)
             elif isinstance(v, list):
-                resolved[k] = [self.resolve_var(i) if isinstance(i, str) else i for i in v]
+                resolved[k] = [self.resolve_var(item) if isinstance(item, str) else item for item in v]
             else:
                 resolved[k] = v
         return resolved
-
-    def to_json(self) -> str:
-        return json.dumps({
-            "workflow_id": self.workflow_id,
-            "execution_id": self.execution_id,
-            "shared": self.shared,
-            "pipeline": self.pipeline,
-            "events": self.events,
-        }, default=str)
-
-    @classmethod
-    def from_json(cls, json_str: str) -> WorkflowContext:
-        data = json.loads(json_str)
-        ctx = cls(
-            workflow_id=data["workflow_id"],
-            execution_id=data["execution_id"],
-            shared=data.get("shared", {}),
-            pipeline=data.get("pipeline", []),
-            events=data.get("events", []),
-        )
-        return ctx

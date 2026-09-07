@@ -15,6 +15,7 @@ from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
     ParallelBranch,
+    RollbackPolicy,
     Step,
     StepType,
 )
@@ -26,7 +27,7 @@ from workflow.events import (
     STEP_STARTED,
     EventBus,
 )
-from workflow.security import AuditLogger
+from workflow.security import AuditLogger, PermissionScope
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 # ── Step executors ──────────────────────────────────────────────────────────────
 
 
-def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> Any:
+def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
     """Execute a tool step. Tool name is in step.args['command'] or step.args['tool']."""
     # Resolve {{ var }} in args
     resolved_args = ctx.resolve_args(step.args)
@@ -43,6 +44,13 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
     tool_name = resolved_args.pop("tool", resolved_args.pop("command", None))
     if not tool_name:
         raise ValueError(f"Step '{step.name}': no tool specified")
+
+    # Enforce tool allowlist/blocklist from workflow definition
+    if permission_scope is None:
+        from workflow.security import PermissionScope
+        permission_scope = PermissionScope()
+    if not permission_scope.can_run_tool(tool_name):
+        raise PermissionError(f"Step '{step.name}': tool '{tool_name}' is not permitted by workflow permission policy")
 
     # Try Hermes tool registry first, fall back to subprocess for shell tools
     result = None
@@ -56,21 +64,24 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> A
         logging.getLogger(__name__).debug("Tool '%s' not found in registry: %s", tool_name, e)
 
     if result is None:
-        # Fallback: subprocess for shell-like commands
-        import re
+        # Fallback: subprocess for safe read-only commands
+        import shlex
         import subprocess
 
-        from workflow.security import PermissionScope
-        scope = PermissionScope()
         cmd = resolved_args.get("command") or resolved_args.get("cmd", "")
         if not cmd:
             raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
-        if scope.is_destructive(cmd):
+        if permission_scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
-        # Block shell operators that enable command injection: substitution, chaining, redirection
-        if re.search(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<", cmd):
+        # Defense-in-depth: block shell operators (still relevant if shlex parsing fails or is bypassed)
+        from workflow.security import SHELL_OPERATOR_BLOCK
+        if SHELL_OPERATOR_BLOCK.search(cmd):
             raise PermissionError(f"Step '{step.name}': command contains disallowed shell operators")
-        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
+        # Command allowlist: only safe commands permitted through subprocess fallback
+        if not permission_scope.is_command_allowed(cmd):
+            raise PermissionError(f"Step '{step.name}': command '{tool_name}' is not permitted by the command allowlist")
+        # shell=False + shlex.split = no shell injection possible
+        out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
     # Store result in context
@@ -101,14 +112,14 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> 
     return result
 
 
-def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> dict:
+def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> dict:
     """Execute a parallel_branch step: all sub-branches run concurrently."""
     if not step.branches:
         return {}
     results = {}
     with ThreadPoolExecutor(max_workers=len(step.branches)) as executor:
         futures = {
-            executor.submit(_execute_branch, branch, ctx, audit): branch
+            executor.submit(_execute_branch, branch, ctx, audit, permission_scope): branch
             for branch in step.branches
         }
         for future in as_completed(futures):
@@ -123,10 +134,10 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
     return results
 
 
-def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger) -> Any:
+def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
     results = []
     for s in branch.steps:
-        r = _execute_single_step(s, ctx, audit)
+        r = _execute_single_step(s, ctx, audit, permission_scope)
         results.append(r)
     return results
 
@@ -144,7 +155,7 @@ def execute_checkpoint_step(step: Step, ctx: WorkflowContext, audit: AuditLogger
 # ── Single step execution with error handling ───────────────────────────────────
 
 
-def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> Any:
+def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
     """Execute one step with error handling, retry, and checkpoint."""
     event_bus = EventBus.get_instance()
 
@@ -154,11 +165,11 @@ def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -
 
         try:
             if step.step_type == StepType.TOOL:
-                result = execute_tool_step(step, ctx, audit)
+                result = execute_tool_step(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.AGENT:
                 result = execute_agent_step(step, ctx, audit)
             elif step.step_type == StepType.PARALLEL_BRANCH:
-                result = execute_parallel_branch(step, ctx, audit)
+                result = execute_parallel_branch(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.CHECKPOINT:
                 result = execute_checkpoint_step(step, ctx, audit)
             elif step.step_type == StepType.EVENT:
@@ -195,10 +206,17 @@ def execute_steps(
 
     # Build dependency graph
     step_map = {s.name: s for s in definition.steps}
+    # ponytail: pre-build dependents map to avoid O(n²) scan on each step completion
+    dependents: dict[str, list] = {name: [] for name in step_map}
+    for s in definition.steps:
+        for dep in s.requires:
+            if dep in step_map:
+                dependents[dep].append(s)
     completed = set()
     failed_step: str | None = None
     _error: Exception | None = None
     workflow_started_at = datetime.now(timezone.utc)
+    rollback_triggered = False
 
     # ponytail: resume support — pre-mark earlier steps as completed
     if resume_from_step > 0:
@@ -214,8 +232,6 @@ def execute_steps(
     ready = [s for s in definition.steps[resume_from_step:] if in_degree[s.name] == 0]
 
     def _should_stop() -> bool:
-        if record.status == ExecutionStatus.TERMINATED:
-            return True
         if record.status == ExecutionStatus.TERMINATED:
             return True
         return bool(stop_event and stop_event.is_set())
@@ -262,10 +278,9 @@ def execute_steps(
                 store.update_step(step_id, started_at=started_at)
 
                 try:
-                    result = _execute_single_step(step, ctx, audit)
-                    # Persist latest checkpoint to DB so saga rollback can retrieve it
-                    latest_checkpoint = ctx.checkpoints[-1] if ctx.checkpoints else None
-                    ckpt_json = json.dumps(latest_checkpoint, default=str) if latest_checkpoint else ""
+                    result = _execute_single_step(step, ctx, audit, definition.permission_scope)
+                    # Persist pre-step checkpoint to DB so saga rollback can retrieve it
+                    ckpt_json = json.dumps(_pre_snap, default=str) if _pre_snap else ""
                     store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), checkpoint_json=ckpt_json, ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True
@@ -298,9 +313,14 @@ def execute_steps(
                         completed.add(step.name)
                         done = True
                     elif action == ErrorAction.ROLLBACK:
-                        # Trigger rollback
-                        _do_rollback(ctx, record, store, audit)
-                        return ExecutionStatus.ROLLED_BACK
+                        failed_step = step.name
+                        rollback_triggered = True
+                        record.status = ExecutionStatus.ROLLED_BACK
+                        # Execute SAGA compensation inline (policy: saga runs compensate for completed steps)
+                        if record.rollback_policy == RollbackPolicy.SAGA:
+                            _execute_saga_compensation(ctx, record, store, audit, definition.permission_scope)
+                        completed.add(step.name)
+                        done = True
                     elif action == ErrorAction.DEGRADE:
                         completed.add(step.name)
                         done = True
@@ -310,43 +330,60 @@ def execute_steps(
                         return ExecutionStatus.FAILED
 
             # Update in-degrees for dependents (Kahn's algorithm — only enqueue when all deps satisfied)
-            for s in definition.steps:
-                if step.name in s.requires and s.name not in completed:
-                    in_degree[s.name] -= 1
-                    # ponytail: only add to ready when ALL dependencies are in completed (avoids parallel violation)
-                    if in_degree[s.name] == 0 and all(d in completed for d in s.requires if d in step_map):
-                        ready.append(s)
+            # Skip enqueuing dependents if rollback has been triggered
+            if not rollback_triggered:
+                for s in dependents.get(step.name, []):
+                    if s.name not in completed:
+                        in_degree[s.name] -= 1
+                        # ponytail: only add to ready when ALL dependencies are in completed (avoids parallel violation)
+                        if in_degree[s.name] == 0 and all(d in completed for d in s.requires if d in step_map):
+                            ready.append(s)
+
+        # Stop processing further steps once rollback has been triggered
+        if rollback_triggered:
+            ready.clear()
 
     # All done
     if failed_step:
-        record.status = ExecutionStatus.FAILED
+        if record.status == ExecutionStatus.ROLLED_BACK and record.rollback_policy == RollbackPolicy.CHECKPOINT:
+            _do_rollback(ctx, record, store, audit, definition.permission_scope)
+        elif record.status == ExecutionStatus.ROLLED_BACK and record.rollback_policy == RollbackPolicy.SAGA:
+            # SAGA compensation already executed inline; save final status
+            store.save_execution(record)
+        else:
+            record.status = ExecutionStatus.FAILED
+            store.save_execution(record)
     else:
         record.status = ExecutionStatus.COMPLETED
-    store.save_execution(record)
+        store.save_execution(record)
     return record.status
 
 
-def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger):
+def _execute_saga_compensation(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> None:
+    """Execute compensate functions in reverse order for completed steps (SAGA pattern)."""
+    steps = store.get_steps(record.id)
+    completed_steps = [s for s in reversed(steps) if s["status"] == "completed" and s.get("checkpoint_json")]
+    for s in completed_steps:
+        ckpt = json.loads(s["checkpoint_json"])
+        compensate = ckpt.get("metadata", {}).get("compensate")
+        if compensate:
+            step = Step(
+                name=s["step_name"],
+                step_type=StepType.TOOL,
+                args={**(compensate.get("args", {})), "tool": compensate.get("tool", "")},
+            )
+            try:
+                execute_tool_step(step, ctx, audit, permission_scope)
+                audit.log(record.id, "saga.compensate", step_id=s["step_name"], details={"ok": True})
+            except Exception as e:  # noqa: BLE001
+                audit.log(record.id, "saga.compensate.failed", step_id=s["step_name"], details={"error": str(e)})
+                raise  # Re-raise so rollback failure surfaces to caller
+
+
+def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger, permission_scope: PermissionScope | None = None):
     """Perform rollback to last checkpoint (checkpoint + saga compensate)."""
-    if record.rollback_policy.value == "saga":
-        # Execute compensate functions in reverse order for completed steps
-        steps = store.get_steps(record.id)
-        completed_steps = [s for s in reversed(steps) if s["status"] == "completed" and s.get("checkpoint_json")]
-        for s in completed_steps:
-            ckpt = json.loads(s["checkpoint_json"])
-            compensate = ckpt.get("metadata", {}).get("compensate")
-            if compensate:
-                step = Step(
-                    name=s["step_name"],
-                    step_type=StepType.TOOL,
-                    args={**(compensate.get("args", {})), "tool": compensate.get("tool", "")},
-                )
-                try:
-                    execute_tool_step(step, ctx, audit)
-                    audit.log(record.id, "saga.compensate", step_id=s["step_name"], details={"ok": True})
-                except Exception as e:  # noqa: BLE001
-                    audit.log(record.id, "saga.compensate.failed", step_id=s["step_name"], details={"error": str(e)})
-                    raise  # Re-raise so rollback failure surfaces to caller
+    if record.rollback_policy == RollbackPolicy.SAGA:
+        _execute_saga_compensation(ctx, record, store, audit, permission_scope)
 
     checkpoint = store.get_last_checkpoint(record.id)
     if checkpoint:

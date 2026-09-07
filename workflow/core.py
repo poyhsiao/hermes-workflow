@@ -8,6 +8,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from workflow.context import WorkflowContext
+from workflow.security import PermissionScope
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
@@ -87,6 +88,8 @@ class CompensateConfig:
     def from_dict(cls, d: dict | None) -> CompensateConfig | None:
         if not d:
             return None
+        if not d.get("tool"):
+            raise ValueError("compensate.tool must be a non-empty string")
         return cls(**d)
 
 
@@ -113,6 +116,8 @@ class Step:
     @classmethod
     def from_dict(cls, d: dict) -> Step:
         step_type = StepType(d.get("type", "tool"))
+        agent_data = d.get("agent") or {}
+        branches_data = d.get("branches") or []
         return cls(
             name=d["name"],
             step_type=step_type,
@@ -121,9 +126,9 @@ class Step:
             on_error=StepErrorAction(d.get("on_error", "stop")),
             retry=RetryConfig.from_dict(d.get("retry")),
             compensate=CompensateConfig.from_dict(d.get("compensate")),
-            agent_profile=d.get("agent", {}).get("profile"),
-            agent_goal=d.get("agent", {}).get("goal"),
-            branches=[ParallelBranch(name=b["name"], steps=[Step.from_dict(s) for s in b["steps"]]) for b in d.get("branches", [])],
+            agent_profile=agent_data.get("profile"),
+            agent_goal=agent_data.get("goal"),
+            branches=[ParallelBranch(name=b["name"], steps=[Step.from_dict(s) for s in b["steps"]]) for b in branches_data],
             event_name=d.get("event"),
         )
 
@@ -137,12 +142,15 @@ class WorkflowDefinition:
     max_duration: int = 0  # 0 = no limit
     error_policy: ErrorPolicy = ErrorPolicy.FAIL_FAST
     rollback_policy: RollbackPolicy = RollbackPolicy.CHECKPOINT
+    permission_scope: PermissionScope | None = None  # None = open (all tools allowed)
     context_schema: dict = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
     definition_yaml: str = ""
 
     @classmethod
     def from_dict(cls, d: dict, yaml_str: str = "") -> WorkflowDefinition:
+        perm = d.get("permission")
+        scope = PermissionScope.from_workflow_definition(perm) if perm else None
         return cls(
             name=d["name"],
             version=d.get("version", 1),
@@ -151,13 +159,14 @@ class WorkflowDefinition:
             max_duration=d.get("max_duration", 0),
             error_policy=ErrorPolicy(d.get("error_policy", "fail_fast")),
             rollback_policy=RollbackPolicy(d.get("rollback_policy", "checkpoint")),
+            permission_scope=scope,
             context_schema=d.get("context", {}),
             steps=[Step.from_dict(s) for s in d.get("steps", [])],
             definition_yaml=yaml_str,
         )
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "name": self.name,
             "version": self.version,
             "description": self.description,
@@ -182,6 +191,15 @@ class WorkflowDefinition:
                 for s in self.steps
             ],
         }
+        if self.permission_scope:
+            perm = {}
+            if self.permission_scope.allowed_tools:
+                perm["allowed_tools"] = sorted(self.permission_scope.allowed_tools)
+            if self.permission_scope.blocked_tools:
+                perm["blocked_tools"] = sorted(self.permission_scope.blocked_tools)
+            if perm:
+                result["permission"] = perm
+        return result
 
 
 @dataclass

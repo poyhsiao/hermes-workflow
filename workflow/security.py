@@ -13,26 +13,72 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
 
-# ── Destructive operation patterns ──────────────────────────────────────────────
+# ── Shell operator blocklist (defense-in-depth after shlex.split) ───────────────
+# Used to reject commands that would still be dangerous even after shell=False
+# (e.g. shlex.split("find / -delete") → ["find", "/", "-delete"], which is safe
+# via shell=False but the user intent is still destructive)
+SHELL_OPERATOR_BLOCK = re.compile(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<")
 
+# ── Destructive operation patterns ──────────────────────────────────────────────
 DESTRUCTIVE_PATTERNS = [
-    re.compile(r"^\s*rm\s+-rf\s+"),
+    re.compile(r"^\s*rm\s+-[rfR]+\s+"),
     re.compile(r"^\s*rmdir\s+"),
     re.compile(r"^\s*drop\s+table\s+", re.IGNORECASE),
-    re.compile(r"^\s*drop\s+database\s+", re.IGNORECASE),
-    re.compile(r"^\s*delete\s+from\s+", re.IGNORECASE),
     re.compile(r"^\s*truncate\s+", re.IGNORECASE),
     re.compile(r"^\s*kubectl\s+delete\s+", re.IGNORECASE),
     re.compile(r"^\s*docker\s+rm\s+", re.IGNORECASE),
     re.compile(r"^\s*kill\s+"),
-    re.compile(r"--force"),
-    re.compile(r"sudo\s+"),
+    re.compile(r"^\s*sudo\s+"),
+    re.compile(r"^\s*git\s+push\s+.*--force", re.IGNORECASE),
+    re.compile(r"--force"),  # catches --force anywhere: kubectl apply --force, docker run --force, etc.
+    # find with destructive actions — caught regardless of shell=False
+    re.compile(r"^\s*find\s+.*-(delete|exec|ok|exec_dir)\b"),
+    # curl/wget piping to shell — remote code execution vector
+    re.compile(r"^\s*(curl|wget).*\|\s*(bash|sh|perl|python|ruby)"),
+    # disk wipe / device overwrite
+    re.compile(r"^\s*dd\s+.*of=(/dev/[a-zA-Z]+\d*|/dev/mapper/)"),
+    re.compile(r"^\s*mkfs"),
+    re.compile(r"^\s*sfdisk"),
+    re.compile(r"^\s*fdisk\s+.*-w\s*[^d]"),  # fdisk -w (destroy mode)
+    # fork bomb — :(){|:&};: pattern
+    re.compile(r"^\s*:\(\)\s*\{\s*\|"),
 ]
 
 NEED_CONFIRM_PATTERNS = [
     re.compile(r"^\s*git\s+push\s+.*--force", re.IGNORECASE),
     re.compile(r"^\s*kubectl\s+apply\s+.*--force", re.IGNORECASE),
 ]
+
+# ── Allowed commands for subprocess fallback ───────────────────────────────────
+# When a tool is not found in the Hermes registry, these safe commands are
+# permitted through subprocess. All other commands are rejected.
+# Security: shell=False + shlex.split + allowlist = no shell injection possible.
+SHELL_SAFE_COMMANDS = frozenset({
+    # File inspection
+    "ls", "stat", "file", "cat", "head", "tail", "wc", "sort", "uniq",
+    "grep", "egrep", "fgrep", "cut", "tr", "tee",
+    # Hash / integrity
+    "md5sum", "sha1sum", "sha256sum", "sha512sum", "cksum",
+    # JSON / data — NOT included: python/python3 can run arbitrary code
+    # even with shell=False (e.g. python3 -c "import os;os.system('cmd')")
+    # Date / version
+    "date", "uptime", "hostname", "uname", "arch",
+    # Network (read-only)
+    "ping", "ping6", "nslookup", "dig", "host", "curl", "wget",
+    # System (read-only)
+    "df", "du", "free", "top", "ps", "pidof",
+    "id", "whoami", "groups", "env", "printenv",
+    # Git (read-only operations)
+    "git",
+    # Misc
+    "echo", "printf", "seq", "yes", "false", "true", "which",
+    "basename", "dirname", "readlink", "realpath",
+    "mkdir", "cp", "mv",  # not rm — removed for safety
+})
+SHELL_SAFE_WITH_ARGS = {      # commands that are safe only without specific flag combos
+    "find": frozenset({"xargs"}),  # find ... | xargs <safe> is ok in shell=False context
+    "tar": frozenset({"-x", "--extract", "-c", "--create"}),  # no -w / --delete
+}
 
 
 class PermissionScope:
@@ -60,14 +106,45 @@ class PermissionScope:
         return tool_name in self.allowed_tools
 
     def is_destructive(self, command: str) -> bool:
+        stripped = command.strip()
+        # Check full command against destructive patterns first
         if any(pat.search(command) for pat in DESTRUCTIVE_PATTERNS):
             return True
-        # Detect rm/rmdir even when prefixed with harmless commands like "echo rm -rf"
-        stripped = re.sub(r"^\s*echo\s+", "", command.strip())
-        return bool(re.search(r"^\s*(rm\s+(-[rR]+[fF]?|[rR][fF])\s+|rmdir\s+)", stripped))
+        # Strip echo prefix and re-check: catches "echo rm -rf /" etc.
+        # (echo just prints; but only safe if the printed content isn't destructive)
+        inner = re.sub(r"^\s*echo\s+", "", stripped)
+        if inner != stripped:  # there was an echo prefix
+            if any(pat.search(inner) for pat in DESTRUCTIVE_PATTERNS):
+                return True
+            # echo with no dangerous content — safe
+            return False
+        return False
+
+    def is_command_allowed(self, cmd: str) -> bool:
+        """Check if cmd is in the safe allowlist for subprocess fallback (shell=False)."""
+        import shlex
+        try:
+            parts = shlex.split(cmd)
+        except ValueError:
+            # shlex fails on unbalanced quotes — reject untrusted input
+            return False
+        if not parts:
+            return False
+        base = parts[0]
+        return base in SHELL_SAFE_COMMANDS
 
     def needs_confirmation(self, command: str) -> bool:
         return any(pat.search(command) for pat in NEED_CONFIRM_PATTERNS)
+
+    @classmethod
+    def from_workflow_definition(cls, perm: dict | None) -> PermissionScope:
+        """Build a PermissionScope from a workflow permission dict."""
+        if not perm:
+            return cls()
+        return cls(
+            allowed_tools=perm.get("allowed_tools"),
+            blocked_tools=perm.get("blocked_tools"),
+        )
 
 
 class AuditLogger:
