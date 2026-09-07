@@ -88,7 +88,7 @@ class CompensateConfig:
     def from_dict(cls, d: dict | None) -> CompensateConfig | None:
         if not d:
             return None
-        if not d.get("tool"):
+        if not isinstance(d.get("tool"), str) or not d["tool"].strip():
             raise ValueError("compensate.tool must be a non-empty string")
         return cls(**d)
 

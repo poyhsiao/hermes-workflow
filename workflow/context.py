@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -78,19 +79,18 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
-        for key, val in self.shared.items():
+        with self._lock:
+            shared_items = list(self.shared.items())
+        for key, val in shared_items:
             placeholder = "{{ " + key + " }}"
             if placeholder in result:
                 replacement = str(val)
-                # ponytail: single-pass escaping — sequential replace() calls cascade
-                # when earlier escapes add \ chars (e.g. \$ -> \\$ -> \\\$) so we scan
-                # once and build the escaped string directly.
                 escaped: list[str] = []
                 for ch in replacement:
                     if ch == "\\":
-                        escaped.append("\\\\")  # \\ -> \\\\
+                        escaped.append("\\\\")
                     elif ch == "\n":
-                        escaped.append("\\n")   # newline -> literal \n
+                        escaped.append("\\n")
                     elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
                         escaped.append("\\" + ch)
                     else:
@@ -107,7 +107,9 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
-        for key, val in self.shared.items():
+        with self._lock:
+            shared_items = list(self.shared.items())
+        for key, val in shared_items:
             placeholder = "{{ " + key + " }}"
             if placeholder in result:
                 result = result.replace(placeholder, str(val))
@@ -118,11 +120,31 @@ class WorkflowContext:
         resolved: dict[str, Any] = {}
         for k, v in args.items():
             if isinstance(v, str):
-                resolved[k] = self.resolve_var(v)
+                resolved[k] = self.resolve_var_raw(v)
             elif isinstance(v, dict):
                 resolved[k] = self.resolve_args(v)
             elif isinstance(v, list):
-                resolved[k] = [self.resolve_var(item) if isinstance(item, str) else item for item in v]
+                resolved[k] = [self.resolve_var_raw(item) if isinstance(item, str) else item for item in v]
             else:
                 resolved[k] = v
         return resolved
+
+    def to_json(self) -> str:
+        return json.dumps({
+            "workflow_id": self.workflow_id,
+            "execution_id": self.execution_id,
+            "shared": self.shared,
+            "pipeline": self.pipeline,
+            "events": self.events,
+        }, default=str)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> WorkflowContext:
+        d = json.loads(json_str)
+        return cls(
+            workflow_id=d["workflow_id"],
+            execution_id=d["execution_id"],
+            shared=d.get("shared", {}),
+            pipeline=d.get("pipeline", []),
+            events=d.get("events", []),
+        )

@@ -94,7 +94,7 @@ def validate_workflow(data: dict) -> None:
                     errors.append(f"Step '{name}': 'compensate' must be a dict")
                 elif not compensate.get("tool") or not isinstance(compensate.get("tool"), str) or not compensate["tool"].strip():
                     errors.append(f"Step '{name}': compensate.tool must be a non-empty string")
-                elif not compensate.get("args") or not isinstance(compensate.get("args"), dict):
+                elif "args" not in compensate or not isinstance(compensate["args"], dict):
                     errors.append(f"Step '{name}': compensate.args must be a dict")
 
             # retry validation

@@ -53,31 +53,32 @@ NEED_CONFIRM_PATTERNS = [
 # When a tool is not found in the Hermes registry, these safe commands are
 # permitted through subprocess. All other commands are rejected.
 # Security: shell=False + shlex.split + allowlist = no shell injection possible.
+#
+# NOTE: This list is restricted to TRULY READ-ONLY commands. Do NOT add commands
+# that can write, create, modify, move, copy, or delete files/directories.
+# Do NOT add commands that can make network modifications (git push, curl -T, etc.)
 SHELL_SAFE_COMMANDS = frozenset({
-    # File inspection
+    # File inspection (read-only)
     "ls", "stat", "file", "cat", "head", "tail", "wc", "sort", "uniq",
-    "grep", "egrep", "fgrep", "cut", "tr", "tee",
-    # Hash / integrity
+    "grep", "egrep", "fgrep", "cut", "tr",
+    # Hash / integrity (read-only)
     "md5sum", "sha1sum", "sha256sum", "sha512sum", "cksum",
-    # JSON / data — NOT included: python/python3 can run arbitrary code
-    # even with shell=False (e.g. python3 -c "import os;os.system('cmd')")
     # Date / version
     "date", "uptime", "hostname", "uname", "arch",
-    # Network (read-only)
-    "ping", "ping6", "nslookup", "dig", "host", "curl", "wget",
+    # Network (read-only - no file upload/download)
+    "ping", "ping6", "nslookup", "dig", "host",
     # System (read-only)
     "df", "du", "free", "top", "ps", "pidof",
     "id", "whoami", "groups", "env", "printenv",
-    # Git (read-only operations)
+    # Git (read-only operations only - see is_command_allowed for full validation)
     "git",
-    # Misc
+    # Misc (no file modification)
     "echo", "printf", "seq", "yes", "false", "true", "which",
     "basename", "dirname", "readlink", "realpath",
-    "mkdir", "cp", "mv",  # not rm — removed for safety
 })
 SHELL_SAFE_WITH_ARGS = {      # commands that are safe only without specific flag combos
     "find": frozenset({"xargs"}),  # find ... | xargs <safe> is ok in shell=False context
-    "tar": frozenset({"-x", "--extract", "-c", "--create"}),  # no -w / --delete
+    "tar": frozenset({"-x", "--extract"}),  # extraction only - no archive creation
 }
 
 
@@ -126,12 +127,24 @@ class PermissionScope:
         try:
             parts = shlex.split(cmd)
         except ValueError:
-            # shlex fails on unbalanced quotes — reject untrusted input
             return False
         if not parts:
             return False
         base = parts[0]
-        return base in SHELL_SAFE_COMMANDS
+        if base not in SHELL_SAFE_COMMANDS:
+            return False
+        if base == "git" and len(parts) > 1:
+            git_subcmd = parts[1]
+            readonly_git_subcommands = frozenset({
+                "log", "show", "diff", "status", "branch", "tag", "reflog",
+                "rev-parse", "ls-files", "ls-tree", "cat-file", "describe",
+                "name-rev", "for-each-ref", "shortlog", "count-objects",
+                "diff-index", "diff-tree", "diff-files", "commit-tree",
+                "verify-pack", "verify-commit", "show-ref", "symbolic-ref",
+            })
+            if git_subcmd not in readonly_git_subcommands:
+                return False
+        return True
 
     def needs_confirmation(self, command: str) -> bool:
         return any(pat.search(command) for pat in NEED_CONFIRM_PATTERNS)

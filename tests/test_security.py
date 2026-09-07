@@ -141,7 +141,7 @@ class TestCommandAllowlist:
         scope = PermissionScope()
         assert scope.is_command_allowed("ls /tmp")
         assert scope.is_command_allowed("grep pattern /tmp/file")
-        assert scope.is_command_allowed("curl https://example.com")
+        assert scope.is_command_allowed("git log --oneline -5")
 
 
 class TestPermissionScopeFromDefinition:
