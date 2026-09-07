@@ -2,7 +2,7 @@
 
 All notable changes to `hermes-dynamic-workflow` are documented here.
 
-## [1.1.0] — Unreleased
+## [1.1.0] — 2026-09-07
 
 ### Security
 
