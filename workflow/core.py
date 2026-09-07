@@ -90,7 +90,10 @@ class CompensateConfig:
             return None
         if not isinstance(d.get("tool"), str) or not d["tool"].strip():
             raise ValueError("compensate.tool must be a non-empty string")
-        return cls(**d)
+        args = d.get("args")
+        if not isinstance(args, dict):
+            raise ValueError("compensate.args must be a mapping")
+        return cls(tool=d["tool"], args=args)
 
 
 @dataclass

@@ -93,8 +93,8 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
 
 def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plugin_ctx: Any = None) -> Any:
     """Execute an agent step via Hermes delegate_task tool (blocking)."""
-    resolved_goal = ctx.resolve_var(step.agent_goal or "")
-    resolved_profile = ctx.resolve_var(step.agent_profile or "")
+    resolved_goal = ctx.resolve_var_raw(step.agent_goal or "")
+    resolved_profile = ctx.resolve_var_raw(step.agent_profile or "")
 
     if plugin_ctx is not None:
         # Use Hermes dispatch_tool for proper tool integration
@@ -118,13 +118,13 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
         # Fallback: try direct import (backward compat)
         try:
             from tools.delegate_tool import delegate_task  # type: ignore[assignment]
-            result = delegate_task(
-                profile=resolved_profile or "default",
-                goal=resolved_goal,
-                context=ctx.shared,
-            )
-        except Exception as e:  # noqa: BLE001
+        except ImportError as e:
             raise RuntimeError(f"Step '{step.name}': delegate_task not available (no plugin_ctx)") from e
+        result = delegate_task(
+            profile=resolved_profile or "default",
+            goal=resolved_goal,
+            context=ctx.shared,
+        )
 
     ctx.set(step.name, result)
     ctx.push(result)
@@ -278,7 +278,7 @@ def execute_steps(
 
         # Execute batch
         for step in batch:
-            if _should_stop():
+            if _should_stop() or rollback_triggered:
                 break
 
             # Save step record
