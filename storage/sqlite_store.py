@@ -253,8 +253,9 @@ class ExecutionStore:
             params.append(status)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        query += f" ORDER BY started_at DESC LIMIT {limit}"
-        rows = self.db.execute(query, params).fetchall()
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.db.execute(query, tuple(params)).fetchall()
         return [dict(r) for r in rows]
 
     # ── Step CRUD ─────────────────────────────────────────────────────────────

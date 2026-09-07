@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from storage.sqlite_store import ExecutionStore
 from workflow.context import WorkflowContext as WfCtx
@@ -24,6 +25,15 @@ _store: ExecutionStore | None = None
 _engines: dict[str, WorkflowEngine] = {}
 _engines_lock = threading.Lock()
 
+# Module-level plugin context — set during register(), used for dispatch_tool in agent steps
+_plugin_ctx: Any = None
+
+
+def _set_plugin_ctx(ctx) -> None:
+    """Store plugin context at registration time for use in agent steps."""
+    global _plugin_ctx
+    _plugin_ctx = ctx
+
 
 def _get_store() -> ExecutionStore:
     global _store
@@ -32,20 +42,43 @@ def _get_store() -> ExecutionStore:
     return _store
 
 
-def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool", triggered_by_user: str | None = None, **kwargs) -> dict:
+_VALID_CONTEXT_TYPES: set = {str, int, float, bool, list, dict}
+
+def _validate_context_arg(key: str, value: Any, allowed_keys: set[str]) -> tuple[bool, str]:
+    """Validate a single context arg against schema. Returns (ok, error_msg)."""
+    if key not in allowed_keys:
+        return False, f"Unknown context key '{key}' — not defined in workflow context_schema"
+    # Reject non-serializable or nested callable values
+    if isinstance(value, type):
+        return False, f"context key '{key}': type objects not allowed"
+    if not isinstance(value, (type(None), str, int, float, bool, list, dict)):
+        return False, f"context key '{key}': type {type(value).__name__} not allowed (must be str|int|float|bool|list|dict)"
+    return True, ""
+
+
+def workflow_run(name: str, args: dict | None = None, context_overrides: dict | None = None, triggered_by: str = "tool", triggered_by_user: str | None = None, **kwargs) -> dict:
     """Run a named workflow with given args. Returns execution_id immediately."""
     store = _get_store()
     defn = store.get_definition(name)
     if not defn:
         return {"ok": False, "error": f"Workflow '{name}' not found. Use 'workflow_define' to create it."}
 
+    # Merge context_overrides (schema param) with args; both validated against context_schema
     args = args or {}
+    context_overrides = context_overrides or {}
+    merged = {**args, **context_overrides}
     exec_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    # Merge args into context schema
+    # Build allowed keys from context_schema; reject unknown keys (YAML-only fields)
+    allowed_keys = set(defn.context_schema.keys())
+    for key, val in merged.items():
+        ok, err = _validate_context_arg(key, val, allowed_keys)
+        if not ok:
+            return {"ok": False, "error": err}
+    # Merge validated args into context schema
     context = dict(defn.context_schema)
-    context.update(args)
+    context.update(merged)
 
     record = ExecutionRecord(
         id=exec_id,
@@ -77,7 +110,7 @@ def workflow_run(name: str, args: dict | None = None, triggered_by: str = "tool"
     # Run in background thread
     def _run():
         try:
-            execute_steps(defn, ctx, record, store, audit, stop_event=engine._stop_event)
+            execute_steps(defn, ctx, record, store, audit, stop_event=engine._stop_event, plugin_ctx=_plugin_ctx)
         finally:
             with _engines_lock:
                 _engines.pop(exec_id, None)
@@ -121,11 +154,11 @@ def workflow_status(execution_id: str) -> dict:
     }
 
 
-def workflow_define(name: str, yaml_content: str, created_by: str | None = None) -> dict:
+def workflow_define(name: str, yaml: str, created_by: str | None = None) -> dict:
     """Define or update a workflow from YAML content."""
     store = _get_store()
     try:
-        defn = parse_workflow_yaml(yaml_content)
+        defn = parse_workflow_yaml(yaml)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
 
@@ -307,10 +340,10 @@ def workflow_export(name: str, format: str = "yaml") -> dict:
     return {"ok": True, "name": name, "format": "yaml", "yaml": dump_workflow_yaml(defn)}
 
 
-def workflow_import(yaml_content: str, as_template: bool = False) -> dict:
+def workflow_import(yaml: str, as_template: bool = False) -> dict:
     """Import a workflow from YAML content."""
     try:
-        defn = parse_workflow_yaml(yaml_content)
+        defn = parse_workflow_yaml(yaml)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Invalid YAML: {e}"}
     store = _get_store()
@@ -319,22 +352,40 @@ def workflow_import(yaml_content: str, as_template: bool = False) -> dict:
     return {"ok": True, "name": defn.name, "version": defn.version, "imported": True}
 
 
-def workflow_suggest(context_messages: list[dict]) -> dict:
-    """Suggest workflows based on recent conversation messages."""
-    # Simple keyword + name match — expand with embedding similarity for production
+def workflow_suggest(context_messages: list[dict] | None = None, limit: int = 3) -> dict:
+    """Suggest workflows based on recent conversation messages or global limit.
+
+    Called two ways:
+    - From dispatcher: context_messages=list of recent messages (backward compat)
+    - From Hermes schema: limit=N (returns top N suggestions)
+    """
     store = _get_store()
     defs = store.list_definitions()
     suggestions = []
-    context_text = " ".join(m.get("content", "") if isinstance(m, dict) else str(m) for m in context_messages[-5:]).lower()
-    for d in defs:
-        name = d["name"].lower()
-        if name in context_text or any(word in context_text for word in name.split("_")):
-            suggestions.append({"name": d["name"], "reason": f"'{name}' matches recent conversation"})
-    return {"ok": True, "suggestions": suggestions}
+    if context_messages:
+        # Backward compat: keyword-match against conversation context
+        context_text = " ".join(
+            m.get("content", "") if isinstance(m, dict) else str(m)
+            for m in context_messages[-5:]
+        ).lower()
+        for d in defs:
+            name = d["name"].lower()
+            if name in context_text or any(word in context_text for word in name.split("_")):
+                suggestions.append({"name": d["name"], "reason": f"'{name}' matches recent conversation"})
+    else:
+        # Hermes schema path: return top-N by name order
+        for d in defs[:limit]:
+            suggestions.append({"name": d["name"], "reason": "top workflow"})
+    return {"ok": True, "suggestions": suggestions[:limit]}
 
 
-def workflow_metrics(workflow_name: str | None = None) -> dict:
-    """Return Prometheus-format metrics for workflow executions."""
+def workflow_metrics(workflow_name: str | None = None, period: str | None = None) -> dict:
+    """Return Prometheus-format metrics for workflow executions.
+
+    Args:
+        workflow_name: filter metrics to a specific workflow (CLI path)
+        period: time period filter e.g. '7d', '30d' (Hermes schema path, future use)
+    """
     from observability.logger import get_prometheus_metrics
     store = _get_store()
     metrics = get_prometheus_metrics(store)

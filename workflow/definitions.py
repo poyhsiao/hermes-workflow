@@ -31,8 +31,28 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
     return WorkflowDefinition.from_dict(data, yaml_str)
 
 
+_WF_KNOWN_FIELDS: frozenset[str] = frozenset({
+    "name", "version", "description", "concurrency", "max_duration",
+    "error_policy", "rollback_policy", "context_schema", "permission", "steps",
+    "context",  # legacy top-level field (parsed by WorkflowDefinition.from_dict)
+})
+_WF_STEP_KNOWN_FIELDS: frozenset[str] = frozenset({
+    "name", "type", "requires", "args", "on_error", "retry",
+    "compensate", "agent", "parallel_branch", "event", "checkpoint",
+    "event_name", "tool", "command",  # legacy YAML step-level fields (silently ignored by parser)
+    "agent_goal", "agent_profile",    # top-level agent step fields
+    "branches",                        # parallel_branch sub-field
+    "profile", "goal",                 # agent sub-fields (when agent is flat dict, not nested)
+})
+
+
 def validate_workflow(data: dict) -> None:
     errors: list[str] = []
+
+    # Reject unknown top-level fields (prevents malicious YAML keys from being silently ignored)
+    unknown = sorted(set(data.keys()) - _WF_KNOWN_FIELDS)
+    if unknown:
+        errors.append(f"Unknown top-level field(s): {unknown}")
 
     if "name" not in data:
         errors.append("Missing required field: 'name'")
@@ -57,6 +77,10 @@ def validate_workflow(data: dict) -> None:
             if not isinstance(step, dict):
                 errors.append(f"Step {i} must be a dict")
                 continue
+            # Reject unknown step fields
+            unknown_step = sorted(set(step.keys()) - _WF_STEP_KNOWN_FIELDS)
+            if unknown_step:
+                errors.append(f"Step {i}: unknown field(s): {unknown_step}")
             if "name" not in step:
                 errors.append(f"Step {i}: missing 'name'")
             name = step.get("name", "")
@@ -71,7 +95,7 @@ def validate_workflow(data: dict) -> None:
 
             # Validate requires references
             for dep in step.get("requires", []):
-                if dep not in step_names and dep not in [s["name"] for s in data["steps"]]:
+                if dep not in step_names:
                     errors.append(f"Step '{name}': requires unknown step '{dep}'")
 
             # parallel_branch must have branches
