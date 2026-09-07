@@ -3,10 +3,10 @@
 import pytest
 
 from workflow.definitions import (
-    ValidationError,
     dump_workflow_yaml,
     parse_workflow_yaml,
     validate_workflow,
+    ValidationError,
 )
 
 

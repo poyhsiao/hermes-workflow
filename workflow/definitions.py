@@ -25,6 +25,8 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
         )
 
     data = docs[0]
+    if data is None or not isinstance(data, dict):
+        raise ValidationError("YAML document must be a non-null dict")
     validate_workflow(data)
     return WorkflowDefinition.from_dict(data, yaml_str)
 

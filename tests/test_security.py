@@ -9,7 +9,6 @@ from storage.sqlite_store import ExecutionStore
 from workflow.security import (
     AuditLogger,
     DESTRUCTIVE_PATTERNS,
-    NEED_CONFIRM_PATTERNS,
     PermissionScope,
 )
 

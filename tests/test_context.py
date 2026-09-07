@@ -194,7 +194,7 @@ class TestRollbackTo:
         ctx = WorkflowContext(workflow_id="w1", execution_id="e1")
         cp1 = ctx.checkpoint(step_index=0)
         ctx.set("x", 1)
-        cp2 = ctx.checkpoint(step_index=1)
+        ctx.checkpoint(step_index=1)
         ctx.set("x", 2)
         assert len(ctx.checkpoints) == 2
         ctx.rollback_to(cp1)

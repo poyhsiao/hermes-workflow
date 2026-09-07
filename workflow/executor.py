@@ -117,7 +117,10 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
     if not step.branches:
         return {}
     results = {}
-    with ThreadPoolExecutor(max_workers=len(step.branches)) as executor:
+    max_workers = len(step.branches)
+    if permission_scope is not None and permission_scope.max_parallel_branches > 0:
+        max_workers = min(max_workers, permission_scope.max_parallel_branches)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(_execute_branch, branch, ctx, audit, permission_scope): branch
             for branch in step.branches
@@ -269,6 +272,10 @@ def execute_steps(
                 metadata={"step": step.name, "pre": True, "compensate": {"tool": step.compensate.tool, "args": step.compensate.args} if step.compensate else None},
             )
 
+            # Persist pre-step checkpoint to DB before execution so rollback can retrieve it
+            ckpt_json = json.dumps(_pre_snap, default=str) if _pre_snap else ""
+            store.update_step(step_id, checkpoint_json=ckpt_json)
+
             strategy = strategy_for(step)
             attempt = 0
             done = False
@@ -279,9 +286,7 @@ def execute_steps(
 
                 try:
                     result = _execute_single_step(step, ctx, audit, definition.permission_scope)
-                    # Persist pre-step checkpoint to DB so saga rollback can retrieve it
-                    ckpt_json = json.dumps(_pre_snap, default=str) if _pre_snap else ""
-                    store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), checkpoint_json=ckpt_json, ended_at=datetime.now(timezone.utc).isoformat())
+                    store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True
                 except Exception as e:  # noqa: BLE001
@@ -318,7 +323,12 @@ def execute_steps(
                         record.status = ExecutionStatus.ROLLED_BACK
                         # Execute SAGA compensation inline (policy: saga runs compensate for completed steps)
                         if record.rollback_policy == RollbackPolicy.SAGA:
-                            _execute_saga_compensation(ctx, record, store, audit, definition.permission_scope)
+                            try:
+                                _execute_saga_compensation(ctx, record, store, audit, definition.permission_scope)
+                            except Exception:
+                                record.status = ExecutionStatus.FAILED
+                                store.save_execution(record)
+                                raise
                         completed.add(step.name)
                         done = True
                     elif action == ErrorAction.DEGRADE:

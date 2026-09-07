@@ -73,7 +73,7 @@ SHELL_SAFE_COMMANDS = frozenset({
     # Git (read-only operations only - see is_command_allowed for full validation)
     "git",
     # Misc (no file modification)
-    "echo", "printf", "seq", "yes", "false", "true", "which",
+    "echo", "printf", "seq", "false", "true", "which",
     "basename", "dirname", "readlink", "realpath",
 })
 SHELL_SAFE_WITH_ARGS = {      # commands that are safe only without specific flag combos

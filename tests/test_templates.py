@@ -1,8 +1,5 @@
 """Tests for storage/templates: path traversal guard."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from storage.templates import TemplateRegistry
@@ -67,7 +64,7 @@ class TestTemplateCrudPathTraversal:
 
     def test_roundtrip_valid_name(self, registry):
         yaml = "name: test\nsteps: []"
-        path = registry.save("my-workflow-v1", yaml, description="test")
+        registry.save("my-workflow-v1", yaml, description="test")
         loaded = registry.load("my-workflow-v1")
         assert loaded == yaml
         assert registry.delete("my-workflow-v1")

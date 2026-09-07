@@ -1,7 +1,5 @@
 """Tests for EventBus."""
 
-import threading
-
 import pytest
 
 from workflow.events import (
@@ -12,8 +10,8 @@ from workflow.events import (
     WORKFLOW_FAILED,
     WORKFLOW_STARTED,
     WORKFLOW_STOPPED,
-    WorkflowEvent,
     EventBus,
+    WorkflowEvent,
 )
 
 

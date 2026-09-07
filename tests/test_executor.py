@@ -5,6 +5,7 @@ import tempfile
 
 import pytest
 
+from storage.sqlite_store import ExecutionStore
 from workflow.context import WorkflowContext
 from workflow.core import (
     ConcurrencyMode,
@@ -12,14 +13,10 @@ from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
     RollbackPolicy,
-    Step,
-    StepType,
-    WorkflowDefinition,
 )
 from workflow.definitions import parse_workflow_yaml
 from workflow.executor import execute_steps
-from workflow.security import AuditLogger, PermissionScope
-from storage.sqlite_store import ExecutionStore
+from workflow.security import AuditLogger
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
@@ -257,6 +254,7 @@ steps:
         audit = AuditLogger(store)
 
         result = execute_steps(defn, ctx, record, store, audit)
+        assert result == ExecutionStatus.FAILED
         # on_error: continue lets execution proceed past the failing step,
         # but workflow-level fail_fast still marks the workflow as FAILED.
         # The key is that after_fail DOES execute (step was not skipped).

@@ -10,8 +10,6 @@
 
 ### `delegate_task` / `execute_agent_step`
 
-- `tools/delegate_tool.py` does not exist — `execute_agent_step` will fail at runtime
-- Implementation needed: either Hermes plugin registers this tool, or we stub it out
 - `execute_agent_step` currently does not pass `permission_scope` — may need to add
 
 ### Parallel Branch Execution Model
@@ -49,8 +47,8 @@ Current recommendation: **LLM should default to ThreadPoolExecutor** unless spec
 
 - [x] `compensate.tool` validated non-empty in `CompensateConfig.from_dict()`
 - [x] `compensate` validated in `validate_workflow()` (YAML layer)
-- [ ] `agent` step type schema validation incomplete — only `agent_profile` or `agent_goal` should be required
-- [ ] `ParallelBranch` steps not validated for circular dependencies
+- [x] `agent` step type schema validation — `agent.profile` or `agent.goal` required
+- [x] `ParallelBranch` circular dependency validation — cycles detected at validation time
 
 ## O(n²) in_degree
 

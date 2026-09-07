@@ -5,8 +5,8 @@ import tempfile
 
 import pytest
 
-from storage.sqlite_store import ExecutionStore
 from observability.logger import get_prometheus_metrics
+from storage.sqlite_store import ExecutionStore
 
 
 @pytest.fixture
