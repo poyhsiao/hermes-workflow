@@ -18,7 +18,6 @@ from workflow.definitions import parse_workflow_yaml
 from workflow.executor import execute_steps
 from workflow.security import AuditLogger
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────────
 
 # NOTE: tool name must be INSIDE args, e.g. args: {tool: echo, message: hello}
