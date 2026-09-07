@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
-    "commit": "4d19860ed772adba525be1299c56f4cfbec1fac9",
-    "indexed_at": "2026-09-06T14:54:21Z",
+    "commit": "7d4c3bff2fee5219515688788b445841676472a2",
+    "indexed_at": "2026-09-07T08:55:00Z",
     "project": "hermes-workflow-taimen",
     "nodes": 501,
     "edges": 1890,

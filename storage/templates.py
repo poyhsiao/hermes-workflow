@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
+
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z][-a-zA-Z0-9_]*$")
 
 DEFAULT_TEMPLATE_DIR = Path.home() / ".hermes" / "workflow_templates"
 
@@ -17,10 +20,7 @@ class TemplateRegistry:
 
     def save(self, name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> str:
         """Save a workflow as a template file."""
-        # Prevent path traversal
-        safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_").strip()
-        if not safe_name:
-            raise ValueError(f"Invalid template name: {name!r}")
+        safe_name = self._safe_name(name)
         path = self.template_dir / f"{safe_name}.yaml"
         meta_path = self.template_dir / f"{safe_name}.meta.json"
         path.write_text(yaml_content)
@@ -42,9 +42,9 @@ class TemplateRegistry:
         return templates
 
     def _safe_name(self, name: str) -> str:
-        """Normalize name to prevent path traversal."""
-        safe = name.replace("..", "").replace("/", "_").replace("\\", "_").strip()
-        if not safe:
+        """Validate and normalize name to prevent path traversal."""
+        safe = name.strip()
+        if not _SAFE_NAME_RE.match(safe):
             raise ValueError(f"Invalid template name: {name!r}")
         return safe
 

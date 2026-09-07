@@ -2,6 +2,28 @@
 
 All notable changes to `hermes-dynamic-workflow` are documented here.
 
+## [1.1.0] — Unreleased
+
+### Security
+
+- **Shell injection guard** — `execute_tool_step` now uses `shell=False` + `shlex.split` for subprocess fallback, eliminating shell injection vectors. Shell operators (`$()`, backtick, `;`, `&&`, `||`, `>>`, `<<`) are blocked as defense-in-depth even when shlex parsing is bypassed.
+- **Command allowlist** — `SHELL_SAFE_COMMANDS` whitelist for subprocess fallback. Only read-only/safe commands (`ls`, `cat`, `grep`, `git`, `curl`, etc.) are permitted; `python`/`perl`/`ruby` excluded to prevent inline code execution.
+- **Workflow permission scope** — `permission.allowed_tools` / `permission.blocked_tools` per workflow definition; enforced at tool dispatch time.
+- **Echo rm detection** — patterns like `echo rm -rf` are caught and blocked; the echo prefix is stripped before destructive pattern matching.
+- **Prometheus label escaping** — `workflow_executions_total` / `workflow_retries_total` now escape `\`, `"`, newlines in label values to prevent metric injection.
+- **Template name validation** — `WorkflowTemplate.save()` enforces `^[a-zA-Z][-a-zA-Z0-9_]*$` to prevent path traversal and injection via template names.
+
+### Validation
+
+- **YAML multi-document guard** — `parse_workflow_yaml` rejects workflows with multiple YAML documents (must be a single document).
+- **Permission block validation** — `permission` field must be a dict; `allowed_tools` / `blocked_tools` must be lists.
+- **Compensate step validation** — `compensate.tool` must be a non-empty string; `compensate.args` must be a dict.
+
+### Bug Fixes
+
+- **`echo rm` detection** — `is_destructive` now strips `echo` prefix before pattern matching, catching `echo rm -rf /` style obfuscation.
+- **Parallel rollback tracking** — `_pending_dependents` map pre-built to avoid O(n²) scan on each step completion.
+
 ## [1.0.0] — 2025-09-06
 
 ### Added

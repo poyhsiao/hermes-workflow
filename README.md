@@ -14,6 +14,7 @@
 - **Intent detection** — `pre_llm_call` hook suggests workflows from conversation keywords
 - **Observability** — SQLite audit log, Prometheus metrics (`workflow_executions_total`, `workflow_active_runs`, ...), OpenTelemetry spans per step
 - **Template registry** — save, list, load, delete reusable workflow templates from `~/.hermes/workflow_templates/`
+- **Security** — workflow permission scopes (`allowed_tools`/`blocked_tools`), command allowlist for subprocess fallback, defense-in-depth shell operator blocking, Prometheus label escaping
 
 ## Installation
 
@@ -220,6 +221,25 @@ hermes-dynamic-workflow/
   - `execution_steps` — per-step input/output/status/retry/checkpoint
   - `audit_log` — every action timestamped
 - **Templates**: `~/.hermes/workflow_templates/*.yaml`
+
+## Security
+
+Workflows can declare a `permission` block to restrict which tools and commands are permitted:
+
+```yaml
+permission:
+  allowed_tools:   # optional allowlist — only these tools can run
+    - bash
+    - read
+    - grep
+  blocked_tools:   # optional blocklist — these tools are always denied
+    - write
+    - edit
+```
+
+**Command allowlist** — when a tool is not found in the Hermes registry, the subprocess fallback is used. Only safe read-only commands are permitted (`ls`, `cat`, `grep`, `stat`, `curl`, `wget`, `git`, `md5sum`, `sha256sum`, etc.).
+
+**Defense-in-depth** — shell operators (`;`, `&&`, `||`, `$()`, backtick, `>>`, `<<`) are blocked even when `shell=False` is used. Commands like `rm -rf`, `dd`, `mkfs`, `curl | bash` are blocked. `echo rm -rf` style obfuscation is also caught.
 
 ## Error Handling
 

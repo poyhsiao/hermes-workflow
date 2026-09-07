@@ -13,10 +13,20 @@ class ValidationError(Exception):
 
 def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
     try:
-        data = yaml.safe_load(yaml_str)
+        docs = list(yaml.safe_load_all(yaml_str))
     except yaml.YAMLError as e:
         raise ValidationError(f"Invalid YAML: {e}") from e
 
+    if len(docs) == 0:
+        raise ValidationError("Empty YAML document")
+    if len(docs) > 1:
+        raise ValidationError(
+            f"Multiple YAML documents ({len(docs)}) found; workflow must be a single document"
+        )
+
+    data = docs[0]
+    if data is None or not isinstance(data, dict):
+        raise ValidationError("YAML document must be a non-null dict")
     validate_workflow(data)
     return WorkflowDefinition.from_dict(data, yaml_str)
 
@@ -30,7 +40,18 @@ def validate_workflow(data: dict) -> None:
         errors.append("Missing required field: 'steps'")
     elif not isinstance(data["steps"], list):
         errors.append("'steps' must be a list")
-    else:
+
+    # Validate permission block
+    perm = data.get("permission")
+    if perm is not None and not isinstance(perm, dict):
+        errors.append("'permission' must be a dict")
+    elif perm:
+        if "allowed_tools" in perm and not isinstance(perm["allowed_tools"], list):
+            errors.append("'permission.allowed_tools' must be a list")
+        if "blocked_tools" in perm and not isinstance(perm["blocked_tools"], list):
+            errors.append("'permission.blocked_tools' must be a list")
+
+    if "steps" in data and isinstance(data["steps"], list):
         step_names = set()
         for i, step in enumerate(data["steps"]):
             if not isinstance(step, dict):
@@ -67,6 +88,16 @@ def validate_workflow(data: dict) -> None:
                 agent = step.get("agent", {})
                 if not agent.get("profile") and not agent.get("goal"):
                     errors.append(f"Step '{name}': agent requires 'agent.profile' or 'agent.goal'")
+
+            # compensate validation
+            compensate = step.get("compensate")
+            if compensate:
+                if not isinstance(compensate, dict):
+                    errors.append(f"Step '{name}': 'compensate' must be a dict")
+                elif not compensate.get("tool") or not isinstance(compensate.get("tool"), str) or not compensate["tool"].strip():
+                    errors.append(f"Step '{name}': compensate.tool must be a non-empty string")
+                elif "args" not in compensate or not isinstance(compensate["args"], dict):
+                    errors.append(f"Step '{name}': compensate.args must be a dict")
 
             # retry validation
             retry = step.get("retry")

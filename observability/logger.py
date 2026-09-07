@@ -49,6 +49,10 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
         "workflow_retries_total": {},
     }
 
+    def _esc(s: str) -> str:
+        """Escape special chars in Prometheus label values."""
+        return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
     rows = store.db.execute("""
         SELECT
             workflow_id,
@@ -67,8 +71,8 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
 
     active = 0
     for r in rows:
-        wf = r["workflow_id"]
-        status = r["status"]
+        wf = _esc(r["workflow_id"] or "")
+        status = _esc(r["status"] or "")
         cnt = r["count"]
         metrics["workflow_executions_total"][f"{{workflow=\"{wf}\",status=\"{status}\"}}"] = cnt
         if status == "running":
@@ -86,7 +90,7 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
     """).fetchall()
 
     for r in retry_rows:
-        wf = r["workflow_id"] or "unknown"
+        wf = _esc(r["workflow_id"] or "unknown")
         metrics["workflow_retries_total"][f"{{workflow=\"{wf}\"}}"] = r["total_retries"] or 0
 
     return metrics
