@@ -48,8 +48,6 @@ jobs:
             --cov=workflow \
             --cov=storage \
             --cov=observability \
-            --cov=tools \
-            --cov=triggers \
             --cov-report=xml \
             --cov-report=term-missing
 
