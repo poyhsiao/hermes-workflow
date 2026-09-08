@@ -323,7 +323,7 @@ def execute_steps(
             ckpt_json = json.dumps(_pre_snap, default=str) if _pre_snap else ""
             store.update_step(step_id, checkpoint_json=ckpt_json)
 
-            strategy = strategy_for(step)
+            strategy = strategy_for(step, definition.error_policy.value if definition.error_policy else "fail_fast")
             attempt = 0
             done = False
 

@@ -93,8 +93,13 @@ class SagaCompensate(ErrorStrategy):
 # ── Factory ──────────────────────────────────────────────────────────────────
 
 
-def strategy_for(step: Step) -> ErrorStrategy:
-    """Map step.on_error to an ErrorStrategy instance."""
+def strategy_for(step: Step, default_policy: str = "fail_fast") -> ErrorStrategy:
+    """Map step.on_error to an ErrorStrategy instance.
+
+    Args:
+        step: The step to get the error strategy for.
+        default_policy: Workflow-level error policy to use when step.on_error is STOP (default).
+    """
     if step.on_error == StepErrorAction.SKIP:
         return SkipOnError()
     if step.on_error == StepErrorAction.CONTINUE:
@@ -104,6 +109,18 @@ def strategy_for(step: Step) -> ErrorStrategy:
     if step.on_error == StepErrorAction.DEGRADE:
         return DegradeOnError()
     if step.on_error == StepErrorAction.RETRY:
+        cfg = step.retry or RetryConfig()
+        return RetryOnError(cfg)
+    # step.on_error == STOP (default): apply workflow-level error policy
+    if default_policy == "skip":
+        return SkipOnError()
+    if default_policy == "continue":
+        return ContinueOnError()
+    if default_policy == "rollback":
+        return RollbackOnError()
+    if default_policy == "degrade":
+        return DegradeOnError()
+    if default_policy == "retry":
         cfg = step.retry or RetryConfig()
         return RetryOnError(cfg)
     return FailFast()  # default + STOP

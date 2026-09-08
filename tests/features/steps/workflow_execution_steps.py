@@ -152,51 +152,55 @@ def given_execution_store() -> ExecutionStore:
 # ── When steps ───────────────────────────────────────────────────────────────────
 
 
-@when("I execute the workflow")
-def when_execute_workflow(workflow_yaml: str, store: ExecutionStore) -> ExecutionStatus:
+@when("I execute the workflow", target_fixture="execution_result")
+def when_execute_workflow(workflow_yaml: str, store: ExecutionStore) -> tuple[ExecutionStatus, WorkflowContext]:
     workflow_def = parse_workflow_yaml(workflow_yaml)
     record = ExecutionRecord(
         id="test-exec-1",
-        workflow_id="test-wf-1",
+        workflow_id=workflow_def.name,
         version=1,
         status=ExecutionStatus.RUNNING,
         concurrency_mode=ConcurrencyMode.SEQUENTIAL,
+        max_duration=300,
         error_policy=ErrorPolicy.FAIL_FAST,
         rollback_policy=RollbackPolicy.CHECKPOINT,
         started_at="2024-01-01T00:00:00Z",
         triggered_by="test",
     )
-    store.save_execution(record)
+    store.create_execution(record, "{}")
 
-    ctx = WorkflowContext(execution_id=record.id, store=store)
-    execute_steps(workflow_def, ctx, store)
-    record = store.get_execution(record.id)
-    return record.status
+    ctx = WorkflowContext(workflow_id=workflow_def.name, execution_id=record.id)
+    from workflow.security import AuditLogger
+    audit = AuditLogger(store)
+    execute_steps(workflow_def, ctx, record, store, audit)
+    return record.status, ctx
 
 
-@when("I execute the workflow with concurrency <mode>")
+@when("I execute the workflow with concurrency <mode>", target_fixture="execution_result")
 def when_execute_workflow_with_concurrency(
     workflow_yaml: str, store: ExecutionStore, mode: str
-) -> ExecutionStatus:
+) -> tuple[ExecutionStatus, WorkflowContext]:
     workflow_def = parse_workflow_yaml(workflow_yaml)
     concurrency = ConcurrencyMode.PARALLEL if mode == "parallel" else ConcurrencyMode.SEQUENTIAL
     record = ExecutionRecord(
         id="test-exec-1",
-        workflow_id="test-wf-1",
+        workflow_id=workflow_def.name,
         version=1,
         status=ExecutionStatus.RUNNING,
         concurrency_mode=concurrency,
+        max_duration=300,
         error_policy=ErrorPolicy.FAIL_FAST,
         rollback_policy=RollbackPolicy.CHECKPOINT,
         started_at="2024-01-01T00:00:00Z",
         triggered_by="test",
     )
-    store.save_execution(record)
+    store.create_execution(record, "{}")
 
-    ctx = WorkflowContext(execution_id=record.id, store=store)
-    execute_steps(workflow_def, ctx, store)
-    record = store.get_execution(record.id)
-    return record.status
+    ctx = WorkflowContext(workflow_id=workflow_def.name, execution_id=record.id)
+    from workflow.security import AuditLogger
+    audit = AuditLogger(store)
+    execute_steps(workflow_def, ctx, record, store, audit)
+    return record.status, ctx
 
 
 # ── Then steps ───────────────────────────────────────────────────────────────────
