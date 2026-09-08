@@ -6,35 +6,7 @@ import os
 import sys
 import tempfile
 import types
-
-# Re-use fake tool registry from parent conftest
-_FAKE_TOOLS = {}
-
-
-def _fake_echo(**kwargs):
-    return {"echoed": kwargs.get("message") or kwargs.get("command") or str(kwargs)}
-
-
-_FAKE_TOOLS["echo"] = _fake_echo
-_FAKE_TOOLS["ls"] = lambda **kw: {"output": "fake ls output"}
-_FAKE_TOOLS["cat"] = lambda **kw: {"output": "fake cat output"}
-
-
-def _fake_get_tool(name):
-    return _FAKE_TOOLS.get(name)
-
-
-# Install fake tools if not already installed
-if "tools" not in sys.modules:
-    _tools_mod = types.ModuleType("tools")
-    _registry_mod = types.ModuleType("tools.registry")
-    _registry_mod.get_tool = _fake_get_tool
-    _tools_mod.registry = _registry_mod
-    sys.modules["tools"] = _tools_mod
-    sys.modules["tools.registry"] = _registry_mod
-
-
-# ── Imports for step definitions ──────────────────────────────────────────────────
+from typing import Any
 
 import pytest
 from pytest_bdd import given, then, when
@@ -47,6 +19,7 @@ from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
     RollbackPolicy,
+    WorkflowDefinition,
 )
 from workflow.definitions import (
     ValidationError,
@@ -56,7 +29,32 @@ from workflow.definitions import (
 )
 from workflow.executor import execute_steps
 from workflow.security import AuditLogger
-from workflow.core import WorkflowDefinition
+
+# Re-use fake tool registry from parent conftest
+_FAKE_TOOLS: dict[str, Any] = {}
+
+
+def _fake_echo(**kwargs: Any) -> dict[str, Any]:
+    return {"echoed": kwargs.get("message") or kwargs.get("command") or str(kwargs)}
+
+
+_FAKE_TOOLS["echo"] = _fake_echo
+_FAKE_TOOLS["ls"] = lambda **kw: {"output": "fake ls output"}  # type: ignore[assignment]
+_FAKE_TOOLS["cat"] = lambda **kw: {"output": "fake cat output"}  # type: ignore[assignment]
+
+
+def _fake_get_tool(name: str) -> Any:
+    return _FAKE_TOOLS.get(name)
+
+
+# Install fake tools if not already installed
+if "tools" not in sys.modules:
+    _tools_mod = types.ModuleType("tools")
+    _registry_mod = types.ModuleType("tools.registry")
+    _registry_mod.get_tool = _fake_get_tool  # type: ignore[attr-defined]
+    _tools_mod.registry = _registry_mod
+    sys.modules["tools"] = _tools_mod
+    sys.modules["tools.registry"] = _registry_mod
 
 
 # ── Workflow Definitions Step Definitions ──────────────────────────────────────────

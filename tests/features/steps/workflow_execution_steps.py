@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import os
 import tempfile
-from typing import Any
 
-import pytest
-from pytest_bdd import given, parsers, then, when
+from pytest_bdd import given, then, when
 
 from storage.sqlite_store import ExecutionStore
 from workflow.context import WorkflowContext
@@ -20,7 +18,6 @@ from workflow.core import (
 )
 from workflow.definitions import parse_workflow_yaml
 from workflow.executor import execute_steps
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────────
 

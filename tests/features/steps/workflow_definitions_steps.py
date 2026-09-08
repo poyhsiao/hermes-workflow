@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
-from pytest_bdd import given, parsers, then, when
+from pytest_bdd import given, then, when
 
 from workflow.definitions import (
     ValidationError,
@@ -14,7 +11,6 @@ from workflow.definitions import (
     parse_workflow_yaml,
     validate_workflow,
 )
-
 
 # ── Fixtures / helpers ───────────────────────────────────────────────────────────
 
