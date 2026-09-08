@@ -31,5 +31,5 @@ Feature: Workflow Execution
     Given a workflow with rollback_policy checkpoint and a failing step
     And an execution store
     When I execute the workflow
-    Then the execution should complete with status failed
+    Then the execution should complete with status rolled_back
     And the state should be restored to checkpoint
