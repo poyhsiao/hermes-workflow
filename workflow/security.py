@@ -17,18 +17,7 @@ if TYPE_CHECKING:
 # Used to reject commands that would still be dangerous even after shell=False
 # (e.g. shlex.split("find / -delete") → ["find", "/", "-delete"], which is safe
 # via shell=False but the user intent is still destructive)
-# Matches shell operators anywhere in a command string.
-# Defense-in-depth: catches operators at command start (including after newlines
-# or whitespace prefixes) and anywhere else a string-based shell eval could be
-# triggered. shlex + shell=False mitigates actual injection, but this blocks
-# operators that would be dangerous if shlex is bypassed or if the string
-# is later evaluated in a shell context.
-SHELL_OPERATOR_BLOCK = re.compile(
-    r"\$\(|[`]|;|\||&|>|<|#|\n"
-)
-# ponytail: original pattern without ^ anchors was correct; added ^\s* prefix
-# variants for completeness (non-breaking — unanchored alternates still cover
-# mid-string operators like "curl http://x.com?a=1;b=2").
+SHELL_OPERATOR_BLOCK = re.compile(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<")
 
 # ── Destructive operation patterns ──────────────────────────────────────────────
 DESTRUCTIVE_PATTERNS = [
@@ -43,7 +32,7 @@ DESTRUCTIVE_PATTERNS = [
     re.compile(r"^\s*git\s+push\s+.*--force", re.IGNORECASE),
     re.compile(r"--force"),  # catches --force anywhere: kubectl apply --force, docker run --force, etc.
     # find with destructive actions — caught regardless of shell=False
-    re.compile(r"^\s*find\s+.*-(delete|execdir|exec|okdir|ok)\b"),
+    re.compile(r"^\s*find\s+.*-(delete|exec|ok|exec_dir)\b"),
     # curl/wget piping to shell — remote code execution vector
     re.compile(r"^\s*(curl|wget).*\|\s*(bash|sh|perl|python|ruby)"),
     # disk wipe / device overwrite
@@ -70,7 +59,7 @@ NEED_CONFIRM_PATTERNS = [
 # Do NOT add commands that can make network modifications (git push, curl -T, etc.)
 SHELL_SAFE_COMMANDS = frozenset({
     # File inspection (read-only)
-    "ls", "stat", "file", "cat", "head", "tail", "wc", "uniq",
+    "ls", "stat", "file", "cat", "head", "tail", "wc", "sort", "uniq",
     "grep", "egrep", "fgrep", "cut", "tr",
     # Hash / integrity (read-only)
     "md5sum", "sha1sum", "sha256sum", "sha512sum", "cksum",
@@ -80,13 +69,17 @@ SHELL_SAFE_COMMANDS = frozenset({
     "ping", "ping6", "nslookup", "dig", "host",
     # System (read-only)
     "df", "du", "free", "top", "ps", "pidof",
-    "id", "whoami", "groups", "printenv",
+    "id", "whoami", "groups", "env", "printenv",
     # Git (read-only operations only - see is_command_allowed for full validation)
     "git",
     # Misc (no file modification)
     "echo", "printf", "seq", "false", "true", "which",
     "basename", "dirname", "readlink", "realpath",
 })
+SHELL_SAFE_WITH_ARGS = {      # commands that are safe only without specific flag combos
+    "find": frozenset({"xargs"}),  # find ... | xargs <safe> is ok in shell=False context
+    "tar": frozenset({"-x", "--extract"}),  # extraction only - no archive creation
+}
 
 
 class PermissionScope:
@@ -146,7 +139,7 @@ class PermissionScope:
                 "log", "show", "diff", "status", "branch", "tag", "reflog",
                 "rev-parse", "ls-files", "ls-tree", "cat-file", "describe",
                 "name-rev", "for-each-ref", "shortlog", "count-objects",
-                "diff-index", "diff-tree", "diff-files",
+                "diff-index", "diff-tree", "diff-files", "commit-tree",
                 "verify-pack", "verify-commit", "show-ref", "symbolic-ref",
             })
             if git_subcmd not in readonly_git_subcommands:

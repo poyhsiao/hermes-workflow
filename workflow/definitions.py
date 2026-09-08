@@ -31,34 +31,8 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
     return WorkflowDefinition.from_dict(data, yaml_str)
 
 
-_WF_KNOWN_FIELDS: frozenset[str] = frozenset({
-    "name", "version", "description", "concurrency", "max_duration",
-    "error_policy", "rollback_policy", "permission", "steps",
-    "context", "context_schema",
-})
-_WF_STEP_KNOWN_FIELDS: frozenset[str] = frozenset({
-    "name", "type", "requires", "args", "on_error", "retry",
-    "compensate", "agent", "parallel_branch", "event", "checkpoint",
-    "branches",
-})
-_LEGACY_STEP_FIELDS: frozenset[str] = frozenset({
-    "tool", "command", "agent_goal", "agent_profile", "profile", "goal", "event_name",
-})
-
-
 def validate_workflow(data: dict) -> None:
     errors: list[str] = []
-
-    # Normalize context_schema to context
-    if "context_schema" in data and "context" not in data:
-        data["context"] = data.pop("context_schema")
-    elif "context_schema" in data:
-        data.pop("context_schema")
-
-    # Reject unknown top-level fields (prevents malicious YAML keys from being silently ignored)
-    unknown = sorted(set(data.keys()) - _WF_KNOWN_FIELDS)
-    if unknown:
-        errors.append(f"Unknown top-level field(s): {unknown}")
 
     if "name" not in data:
         errors.append("Missing required field: 'name'")
@@ -79,40 +53,12 @@ def validate_workflow(data: dict) -> None:
 
     if "steps" in data and isinstance(data["steps"], list):
         step_names = set()
-        all_step_names = set()
         for i, step in enumerate(data["steps"]):
             if not isinstance(step, dict):
                 errors.append(f"Step {i} must be a dict")
                 continue
             if "name" not in step:
                 errors.append(f"Step {i}: missing 'name'")
-            name = step.get("name", "")
-            all_step_names.add(name)
-
-        for i, step in enumerate(data["steps"]):
-            if not isinstance(step, dict):
-                continue
-            # Normalize legacy step fields into supported shapes
-            if "tool" in step or "command" in step:
-                tool_val = step.pop("tool", None) or step.pop("command", None)
-                if tool_val is not None:
-                    step.setdefault("args", {})["tool"] = tool_val
-            if "agent_goal" in step or "agent_profile" in step or "profile" in step or "goal" in step:
-                agent = step.setdefault("agent", {})
-                if "agent_goal" in step:
-                    agent.setdefault("goal", step.pop("agent_goal", None))
-                if "agent_profile" in step:
-                    agent.setdefault("profile", step.pop("agent_profile", None))
-                if "profile" in step:
-                    agent.setdefault("profile", step.pop("profile", None))
-                if "goal" in step:
-                    agent.setdefault("goal", step.pop("goal", None))
-            if "event_name" in step:
-                step.setdefault("event", step.pop("event_name", None))
-            # Reject unknown step fields
-            unknown_step = sorted(set(step.keys()) - _WF_STEP_KNOWN_FIELDS - _LEGACY_STEP_FIELDS)
-            if unknown_step:
-                errors.append(f"Step {i}: unknown field(s): {unknown_step}")
             name = step.get("name", "")
             if name in step_names:
                 errors.append(f"Duplicate step name: '{name}'")
@@ -123,9 +69,9 @@ def validate_workflow(data: dict) -> None:
             if step_type not in valid_types:
                 errors.append(f"Step '{name}': invalid type '{step_type}'; must be one of {valid_types}")
 
-            # Validate requires references against all step names (allows forward references)
+            # Validate requires references
             for dep in step.get("requires", []):
-                if dep not in all_step_names:
+                if dep not in step_names and dep not in [s["name"] for s in data["steps"]]:
                     errors.append(f"Step '{name}': requires unknown step '{dep}'")
 
             # parallel_branch must have branches
@@ -143,9 +89,9 @@ def validate_workflow(data: dict) -> None:
                 if not agent.get("profile") and not agent.get("goal"):
                     errors.append(f"Step '{name}': agent requires 'agent.profile' or 'agent.goal'")
 
-            # compensate validation - runs whenever value is present and non-null (including empty mappings)
+            # compensate validation
             compensate = step.get("compensate")
-            if compensate is not None:
+            if compensate:
                 if not isinstance(compensate, dict):
                     errors.append(f"Step '{name}': 'compensate' must be a dict")
                 elif not compensate.get("tool") or not isinstance(compensate.get("tool"), str) or not compensate["tool"].strip():

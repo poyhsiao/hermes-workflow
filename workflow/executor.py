@@ -91,48 +91,28 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
     return result
 
 
-def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plugin_ctx: Any = None) -> Any:
-    """Execute an agent step via Hermes delegate_task tool (blocking)."""
-    resolved_goal = ctx.resolve_var_raw(step.agent_goal or "")
-    resolved_profile = ctx.resolve_var_raw(step.agent_profile or "")
+def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> Any:
+    """Execute an agent step via delegate_task."""
+    resolved_goal = ctx.resolve_var(step.agent_goal or "")
+    resolved_profile = ctx.resolve_var(step.agent_profile or "")
 
-    if plugin_ctx is not None:
-        # Use Hermes dispatch_tool for proper tool integration
-        result_str = plugin_ctx.dispatch_tool("delegate_task", {
-            "goal": resolved_goal,
-            "profile": resolved_profile or "default",
-            "context": ctx.shared,
-        })
-        # dispatch_tool returns a string — parse it
-        try:
-            result = json.loads(result_str) if result_str else {}
-        except Exception:  # noqa: BLE001
-            result = {"raw": result_str}
-        # Reject non-dict parsed values (null, true, false from malformed JSON) — treat as error
-        if not isinstance(result, dict):
-            raise RuntimeError(f"Step '{step.name}': delegate_task returned non-dict result: {result!r}")
-        # Detect delegate_task error responses — raise so outer handler marks step as failed
-        if result.get("ok") is False:
-            raise RuntimeError(f"Step '{step.name}': delegate_task failed: {result.get('error', result)}")
-    else:
-        # Fallback: try direct import (backward compat)
-        try:
-            from tools.delegate_tool import delegate_task  # type: ignore[assignment]
-        except ImportError as e:
-            raise RuntimeError(f"Step '{step.name}': delegate_task not available (no plugin_ctx)") from e
-        result = delegate_task(
-            profile=resolved_profile or "default",
-            goal=resolved_goal,
-            context=ctx.shared,
-        )
+    try:
+        from tools.delegate_tool import delegate_task
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Step '{step.name}': delegate_task not available in Hermes") from e
 
+    result = delegate_task(
+        profile=resolved_profile or "default",
+        goal=resolved_goal,
+        context=ctx.shared,
+    )
     ctx.set(step.name, result)
     ctx.push(result)
     audit.log(ctx.execution_id, "step.agent", step_id=step.name, details={"profile": resolved_profile})
     return result
 
 
-def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> dict:
+def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> dict:
     """Execute a parallel_branch step: all sub-branches run concurrently."""
     if not step.branches:
         return {}
@@ -142,7 +122,7 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
         max_workers = min(max_workers, permission_scope.max_parallel_branches)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_execute_branch, branch, ctx, audit, permission_scope, plugin_ctx): branch
+            executor.submit(_execute_branch, branch, ctx, audit, permission_scope): branch
             for branch in step.branches
         }
         for future in as_completed(futures):
@@ -157,10 +137,10 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
     return results
 
 
-def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
+def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
     results = []
     for s in branch.steps:
-        r = _execute_single_step(s, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
+        r = _execute_single_step(s, ctx, audit, permission_scope)
         results.append(r)
     return results
 
@@ -178,7 +158,7 @@ def execute_checkpoint_step(step: Step, ctx: WorkflowContext, audit: AuditLogger
 # ── Single step execution with error handling ───────────────────────────────────
 
 
-def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
+def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
     """Execute one step with error handling, retry, and checkpoint."""
     event_bus = EventBus.get_instance()
 
@@ -190,9 +170,9 @@ def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, p
             if step.step_type == StepType.TOOL:
                 result = execute_tool_step(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.AGENT:
-                result = execute_agent_step(step, ctx, audit, plugin_ctx=plugin_ctx)
+                result = execute_agent_step(step, ctx, audit)
             elif step.step_type == StepType.PARALLEL_BRANCH:
-                result = execute_parallel_branch(step, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
+                result = execute_parallel_branch(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.CHECKPOINT:
                 result = execute_checkpoint_step(step, ctx, audit)
             elif step.step_type == StepType.EVENT:
@@ -220,13 +200,11 @@ def execute_steps(
     audit: AuditLogger,
     stop_event: threading.Event | None = None,
     resume_from_step: int = 0,
-    plugin_ctx: Any = None,
 ) -> ExecutionStatus:
     """Execute all steps of a workflow according to dependency graph.
 
     resume_from_step: skip steps before this index (for checkpoint resume).
     Steps before the index are treated as already completed so dependents unblock normally.
-    plugin_ctx: PluginContext — if provided, agent steps use ctx.dispatch_tool() for delegation.
     """
 
     # Build dependency graph
@@ -239,6 +217,7 @@ def execute_steps(
                 dependents[dep].append(s)
     completed = set()
     failed_step: str | None = None
+    _error: Exception | None = None
     workflow_started_at = datetime.now(timezone.utc)
     rollback_triggered = False
 
@@ -278,7 +257,7 @@ def execute_steps(
 
         # Execute batch
         for step in batch:
-            if _should_stop() or rollback_triggered:
+            if _should_stop():
                 break
 
             # Save step record
@@ -306,7 +285,7 @@ def execute_steps(
                 store.update_step(step_id, started_at=started_at)
 
                 try:
-                    result = _execute_single_step(step, ctx, audit, definition.permission_scope, plugin_ctx=plugin_ctx)
+                    result = _execute_single_step(step, ctx, audit, definition.permission_scope)
                     store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True

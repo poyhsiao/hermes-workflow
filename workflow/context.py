@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
-import re
 import threading
 from dataclasses import dataclass, field
 from typing import Any
-
-_PLACEHOLDER_RE = re.compile(r"\{\{ ([^}]+) \}\}")
 
 
 @dataclass
@@ -71,23 +68,23 @@ class WorkflowContext:
                     self.checkpoints = self.checkpoints[: idx + 1]
                     break
 
-    def _replace_placeholders(self, template: str, escape: bool) -> str:
-        """Single-pass placeholder replacement using regex.
+    def resolve_var(self, template: str) -> str:
+        """Simple {{ var }} substitution from shared context.
 
-        Args:
-            template: The template string with {{ var }} placeholders.
-            escape: If True, shell-escape replacement values; if False, use raw values.
+        Shell-context only: escapes $ ` ; & | < > " ' \\ and newlines
+        to prevent command injection when the result is interpolated into
+        a shell command. For non-shell uses (LLM prompts, SQL, HTML, file
+        paths), use resolve_var_raw() instead.
         """
         if not isinstance(template, str):
             return template
-
-        def replacer(match):
-            key = match.group(1)
-            val = self.shared.get(key)
-            if val is None:
-                return match.group(0)
-            replacement = str(val)
-            if escape:
+        result = template
+        with self._lock:
+            shared_items = list(self.shared.items())
+        for key, val in shared_items:
+            placeholder = "{{ " + key + " }}"
+            if placeholder in result:
+                replacement = str(val)
                 escaped: list[str] = []
                 for ch in replacement:
                     if ch == "\\":
@@ -98,37 +95,25 @@ class WorkflowContext:
                         escaped.append("\\" + ch)
                     else:
                         escaped.append(ch)
-                return "".join(escaped)
-            return replacement
-
-        with self._lock:
-            return _PLACEHOLDER_RE.sub(replacer, template)
-
-    def resolve_var(self, template: str) -> str:
-        """Simple {{ var }} substitution from shared context.
-
-        Shell-context only: escapes $ ` ; & | < > " ' \\ and newlines
-        to prevent command injection when the result is interpolated into
-        a shell command. For non-shell uses (LLM prompts, SQL, HTML, file
-        paths), use resolve_var_raw() instead.
-
-        Single-pass: replacement values are not re-scanned for additional
-        placeholders, so nested {{ token }} within a substituted value
-        remain literal.
-        """
-        return self._replace_placeholders(template, escape=True)
+                result = result.replace(placeholder, "".join(escaped))
+        return result
 
     def resolve_var_raw(self, template: str) -> str:
         """{{ var }} substitution without any escaping.
 
         Use for non-shell contexts (LLM prompts, SQL, HTML, file paths).
         Callers are responsible for context-appropriate encoding.
-
-        Single-pass: replacement values are not re-scanned for additional
-        placeholders, so nested {{ token }} within a substituted value
-        remain literal.
         """
-        return self._replace_placeholders(template, escape=False)
+        if not isinstance(template, str):
+            return template
+        result = template
+        with self._lock:
+            shared_items = list(self.shared.items())
+        for key, val in shared_items:
+            placeholder = "{{ " + key + " }}"
+            if placeholder in result:
+                result = result.replace(placeholder, str(val))
+        return result
 
     def resolve_args(self, args: dict) -> dict:
         """Resolve {{ var }} placeholders in all string values of args dict."""
