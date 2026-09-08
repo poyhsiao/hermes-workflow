@@ -303,7 +303,7 @@ def workflow_rollback(
             from workflow.executor import execute_steps
             step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
             ctx.checkpoints.clear()  # fresh checkpoint chain for this run
-            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset)
+            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset, plugin_ctx=_plugin_ctx)
         finally:
             with _engines_lock:
                 _engines.pop(new_exec_id, None)
