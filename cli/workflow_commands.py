@@ -7,8 +7,8 @@ import subprocess
 import sys
 from typing import Any
 
-import tools.workflow_tools as wt
-from triggers.slash_command import WorkflowSlashDispatcher
+from ..tools import workflow_tools as wt
+from ..triggers.slash_command import WorkflowSlashDispatcher
 
 
 def add_workflow_parser(subparsers) -> None:

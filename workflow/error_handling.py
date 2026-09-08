@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from workflow.core import RetryConfig, Step, StepErrorAction
+from .core import RetryConfig, Step, StepErrorAction
 
 
 class ErrorAction:

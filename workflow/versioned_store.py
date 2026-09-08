@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import difflib
 
-from storage.sqlite_store import ExecutionStore
-from workflow.core import WorkflowDefinition
+from ..storage.sqlite_store import ExecutionStore
+from ..workflow.core import WorkflowDefinition
 
 
 class VersionedStore:

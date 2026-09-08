@@ -9,9 +9,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from observability.trace import trace_step
-from workflow.context import WorkflowContext
-from workflow.core import (
+from ..observability.trace import trace_step
+from .context import WorkflowContext
+from .core import (
     ExecutionRecord,
     ExecutionStatus,
     ParallelBranch,
@@ -19,15 +19,15 @@ from workflow.core import (
     Step,
     StepType,
 )
-from workflow.error_handling import ErrorAction, strategy_for
-from workflow.events import (
+from .error_handling import ErrorAction, strategy_for
+from .events import (
     STEP_COMPLETED,
     STEP_FAILED,
     STEP_RETRIED,
     STEP_STARTED,
     EventBus,
 )
-from workflow.security import AuditLogger, PermissionScope
+from .security import AuditLogger, PermissionScope
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
@@ -58,9 +58,10 @@ def execute_tool_step(
     # Try Hermes tool registry first, fall back to subprocess for shell tools
     result = None
     try:
-        from tools.registry import get_tool
+        from tools.registry import registry as _hermes_registry
 
-        tool_fn = get_tool(tool_name)
+        entry = _hermes_registry.get_entry(tool_name)
+        tool_fn = entry.handler if entry else None
         if tool_fn:
             result = tool_fn(**resolved_args)
     except Exception as e:  # noqa: BLE001
@@ -126,6 +127,9 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
         # Fallback: try direct import (backward compat)
         try:
             from tools.delegate_tool import delegate_task  # type: ignore[assignment]
+            # NOTE: delegate_task is not a Python-importable function in Hermes v0.21.0
+            # The primary path (plugin_ctx.dispatch_tool) is the correct approach
+            # This fallback only fires when plugin_ctx is None, which should not happen
 
             result = delegate_task(
                 profile=resolved_profile or "default",
