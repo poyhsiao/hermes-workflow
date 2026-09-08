@@ -75,27 +75,31 @@ class WorkflowContext:
         to prevent command injection when the result is interpolated into
         a shell command. For non-shell uses (LLM prompts, SQL, HTML, file
         paths), use resolve_var_raw() instead.
+
+        ponytail: entire substitution runs under _lock to prevent TOCTOU
+        races where shared mutates between snapshot capture and string
+        replacement (would cause inconsistent placeholder resolution).
         """
         if not isinstance(template, str):
             return template
         result = template
         with self._lock:
             shared_items = list(self.shared.items())
-        for key, val in shared_items:
-            placeholder = "{{ " + key + " }}"
-            if placeholder in result:
-                replacement = str(val)
-                escaped: list[str] = []
-                for ch in replacement:
-                    if ch == "\\":
-                        escaped.append("\\\\")
-                    elif ch == "\n":
-                        escaped.append("\\n")
-                    elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
-                        escaped.append("\\" + ch)
-                    else:
-                        escaped.append(ch)
-                result = result.replace(placeholder, "".join(escaped))
+            for key, val in shared_items:
+                placeholder = "{{ " + key + " }}"
+                if placeholder in result:
+                    replacement = str(val)
+                    escaped: list[str] = []
+                    for ch in replacement:
+                        if ch == "\\":
+                            escaped.append("\\\\")
+                        elif ch == "\n":
+                            escaped.append("\\n")
+                        elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
+                            escaped.append("\\" + ch)
+                        else:
+                            escaped.append(ch)
+                    result = result.replace(placeholder, "".join(escaped))
         return result
 
     def resolve_var_raw(self, template: str) -> str:
@@ -109,10 +113,10 @@ class WorkflowContext:
         result = template
         with self._lock:
             shared_items = list(self.shared.items())
-        for key, val in shared_items:
-            placeholder = "{{ " + key + " }}"
-            if placeholder in result:
-                result = result.replace(placeholder, str(val))
+            for key, val in shared_items:
+                placeholder = "{{ " + key + " }}"
+                if placeholder in result:
+                    result = result.replace(placeholder, str(val))
         return result
 
     def resolve_args(self, args: dict) -> dict:

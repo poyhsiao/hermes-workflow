@@ -17,7 +17,18 @@ if TYPE_CHECKING:
 # Used to reject commands that would still be dangerous even after shell=False
 # (e.g. shlex.split("find / -delete") → ["find", "/", "-delete"], which is safe
 # via shell=False but the user intent is still destructive)
-SHELL_OPERATOR_BLOCK = re.compile(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<")
+# Matches shell operators anywhere in a command string.
+# Defense-in-depth: catches operators at command start (including after newlines
+# or whitespace prefixes) and anywhere else a string-based shell eval could be
+# triggered. shlex + shell=False mitigates actual injection, but this blocks
+# operators that would be dangerous if shlex is bypassed or if the string
+# is later evaluated in a shell context.
+SHELL_OPERATOR_BLOCK = re.compile(
+    r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<|^\s*\$\(|^\s*[`]"
+)
+# ponytail: original pattern without ^ anchors was correct; added ^\s* prefix
+# variants for completeness (non-breaking — unanchored alternates still cover
+# mid-string operators like "curl http://x.com?a=1;b=2").
 
 # ── Destructive operation patterns ──────────────────────────────────────────────
 DESTRUCTIVE_PATTERNS = [

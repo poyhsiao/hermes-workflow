@@ -181,8 +181,10 @@ SCHEMAS: dict[str, dict] = {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "workflow_name": {"type": "string", "description": "Name of the workflow (optional for global metrics)."},
+                    "workflow_name": {"type": "string", "description": "Name of the workflow."},
+                    "period": {"type": "string", "description": "Time period to analyze (e.g. '7d', '30d')."},
                 },
+                "required": ["workflow_name"],
             },
         },
     },

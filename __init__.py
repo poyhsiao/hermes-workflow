@@ -8,8 +8,6 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 
 from __future__ import annotations
 
-import json
-
 __version__ = "1.1.0"
 __plugin_name__ = "hermes-dynamic-workflow"
 
@@ -52,16 +50,11 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
     # Register tools with schema + handler (Hermes v0.21.0 keyword-arg API)
     for name, handler in tool_handlers.items():
-        def make_wrapper(h):
-            def wrapper(args, **kwargs):
-                result = h(**args)
-                return json.dumps(result) if isinstance(result, dict) else result
-            return wrapper
         ctx.register_tool(
             name=name,
             toolset="workflow",
             schema=SCHEMAS[name],
-            handler=make_wrapper(handler),
+            handler=handler,
             is_async=False,
             description="",
             emoji="🔁",
@@ -70,7 +63,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     # Register in-session slash command (/workflow) — works in both CLI and gateway
     ctx.register_command(
         "workflow",
-        handler=_handle_workflow_command,
+        handler_fn=_handle_workflow_command,
         description="Dynamic workflow management: run, define, list, stop, etc.",
         args_hint="<verb> [args]",
     )
@@ -85,6 +78,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
     # Register hooks
     ctx.register_hook("pre_llm_call", _pre_llm_hook)
+    ctx.register_hook("pre_gateway_dispatch", _pre_gateway_hook)
 
     # Ensure DB is initialized
     from storage.sqlite_store import ExecutionStore
@@ -140,3 +134,22 @@ def _pre_llm_hook(
         return None
     # Return dict form — injected into user message to preserve prompt caching
     return {"context": msg}
+
+
+def _pre_gateway_hook(event, gateway, session_store, **kwargs) -> dict | None:
+    """pre_gateway_dispatch: handle /workflow commands from gateway chat platforms."""
+    text = getattr(event, "text", "") or ""
+    if not text.startswith("/workflow"):
+        return None
+
+    args = text[len("/workflow "):] if text.startswith("/workflow ") else ""
+    result = _handle_workflow_command(args)
+    # Respond via gateway
+    try:
+        gateway.adapters[getattr(event.source, "platform", None)].send(
+            {"text": result or "done"},
+            session_id=getattr(event.source, "chat_id", None),
+        )
+    except Exception:  # noqa: BLE001
+        pass  # swallow gateway send errors — command already executed
+    return {"action": "skip"}  # prevent normal agent dispatch
