@@ -179,6 +179,8 @@ steps:
         assert defn2.concurrency.value == "parallel"
         assert len(defn2.steps) == 1
         assert defn2.steps[0].name == "step1"
+        assert defn2.steps[0].args["tool"] == "echo"
+        assert defn2.steps[0].args["msg"] == "hello"
 
     def test_dump_parallel_branch_workflow(self):
         yaml_str = """
@@ -208,6 +210,14 @@ steps:
         defn2 = parse_workflow_yaml(dumped)
         assert defn2.steps[0].name == "fan_out"
         assert defn2.steps[0].step_type.value == "parallel_branch"
+        branch_a = defn2.steps[0].branches[0]
+        assert branch_a.name == "branch_a"
+        assert branch_a.steps[0].args["tool"] == "echo"
+        assert branch_a.steps[0].args["msg"] == "a"
+        branch_b = defn2.steps[0].branches[1]
+        assert branch_b.name == "branch_b"
+        assert branch_b.steps[0].args["tool"] == "echo"
+        assert branch_b.steps[0].args["msg"] == "b"
 
 
 if __name__ == "__main__":

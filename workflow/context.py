@@ -84,26 +84,27 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
-        # Snapshot values under lock, then escape outside lock to prevent
-        # user-defined __str__ from re-entering WorkflowContext.set() under lock
-        replacements: list[tuple[str, str]] = []
+        # Snapshot items under lock, then process outside to prevent user-defined
+        # __str__ from re-entering WorkflowContext.set() under the non-reentrant lock
+        shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
-            for key, val in shared_items:
-                placeholder = "{{ " + key + " }}"
-                if placeholder in result:
-                    replacement = str(val)
-                    escaped: list[str] = []
-                    for ch in replacement:
-                        if ch == "\\":
-                            escaped.append("\\\\")
-                        elif ch == "\n":
-                            escaped.append("\\n")
-                        elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
-                            escaped.append("\\" + ch)
-                        else:
-                            escaped.append(ch)
-                    replacements.append((placeholder, "".join(escaped)))
+        replacements: list[tuple[str, str]] = []
+        for key, val in shared_items:
+            placeholder = "{{ " + key + " }}"
+            if placeholder in result:
+                replacement = str(val)
+                escaped: list[str] = []
+                for ch in replacement:
+                    if ch == "\\":
+                        escaped.append("\\\\")
+                    elif ch == "\n":
+                        escaped.append("\\n")
+                    elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
+                        escaped.append("\\" + ch)
+                    else:
+                        escaped.append(ch)
+                replacements.append((placeholder, "".join(escaped)))
         for placeholder, escaped_str in replacements:
             result = result.replace(placeholder, escaped_str)
         return result
@@ -117,12 +118,14 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
+        # Snapshot items under lock, then process outside to prevent re-entrancy
+        shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
-            for key, val in shared_items:
-                placeholder = "{{ " + key + " }}"
-                if placeholder in result:
-                    result = result.replace(placeholder, str(val))
+        for key, val in shared_items:
+            placeholder = "{{ " + key + " }}"
+            if placeholder in result:
+                result = result.replace(placeholder, str(val))
         return result
 
     def resolve_args(self, args: dict) -> dict:

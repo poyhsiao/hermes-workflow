@@ -211,11 +211,9 @@ class PermissionScope:
                     "diff-index",
                     "diff-tree",
                     "diff-files",
-                    "commit-tree",
                     "verify-pack",
                     "verify-commit",
                     "show-ref",
-                    "symbolic-ref",
                 }
             )
             if git_subcmd not in readonly_git_subcommands:

@@ -338,7 +338,9 @@ steps:
   - name: failing_step
     type: tool
     args:
-      tool: nonexistent_tool_xyz
+      tool: echo
+      message: "{{nonexistent_var}}"
+    on_error: rollback
 """
 
 
@@ -448,7 +450,8 @@ def then_remaining_steps_not_execute(execution_result: tuple[ExecutionStatus, Wo
 @then("the state should be restored to checkpoint")
 def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext]) -> None:
     _, ctx = execution_result
-    step1_result = ctx.get("step1")
-    assert step1_result is not None, "step1 should have result from before failure"
-    failing_step_result = ctx.get("failing_step")
-    assert failing_step_result is None, "failing_step should not have run after rollback"
+    # Verify that ctx was restored to checkpoint - after rollback to pre-step1 state,
+    # ctx.shared and ctx.pipeline should be empty/initial (since step1's modifications
+    # were checkpointed before it ran, and rollback restores to that checkpoint)
+    assert ctx.shared == {}, f"ctx.shared should be empty after rollback, got {ctx.shared}"
+    assert ctx.pipeline == [], f"ctx.pipeline should be empty after rollback, got {ctx.pipeline}"

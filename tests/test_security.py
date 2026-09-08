@@ -142,6 +142,11 @@ class TestCommandAllowlist:
         assert scope.is_command_allowed("grep pattern /tmp/file")
         assert scope.is_command_allowed("git log --oneline -5")
 
+    def test_mutating_git_subcommands_rejected(self):
+        scope = PermissionScope()
+        assert not scope.is_command_allowed("git commit-tree -m 'msg' HEAD^{tree}")
+        assert not scope.is_command_allowed("git symbolic-ref refs/heads/main refs/heads/master")
+
 
 class TestPermissionScopeFromDefinition:
     def test_empty_permission_returns_default_scope(self):
