@@ -404,12 +404,11 @@ def workflow_suggest(context_messages: list[dict] | None = None, limit: int = 3)
     return {"ok": True, "suggestions": suggestions[:limit]}
 
 
-def workflow_metrics(workflow_name: str | None = None, period: str | None = None) -> dict:
+def workflow_metrics(workflow_name: str | None = None) -> dict:
     """Return Prometheus-format metrics for workflow executions.
 
     Args:
         workflow_name: filter metrics to a specific workflow (CLI path)
-        period: time period filter e.g. '7d', '30d' (Hermes schema path, future use)
     """
     from observability.logger import get_prometheus_metrics
 

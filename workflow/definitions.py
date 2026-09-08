@@ -31,16 +31,13 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
 
 _WF_KNOWN_FIELDS: frozenset[str] = frozenset({
     "name", "version", "description", "concurrency", "max_duration",
-    "error_policy", "rollback_policy", "context_schema", "permission", "steps",
+    "error_policy", "rollback_policy", "permission", "steps",
     "context",  # legacy top-level field (parsed by WorkflowDefinition.from_dict)
 })
 _WF_STEP_KNOWN_FIELDS: frozenset[str] = frozenset({
     "name", "type", "requires", "args", "on_error", "retry",
-    "compensate", "agent", "parallel_branch", "event", "checkpoint",
-    "event_name", "tool", "command",  # legacy YAML step-level fields (silently ignored by parser)
-    "agent_goal", "agent_profile",    # top-level agent step fields
-    "branches",                        # parallel_branch sub-field
-    "profile", "goal",                 # agent sub-fields (when agent is flat dict, not nested)
+    "compensate", "agent", "event",
+    "branches",  # parallel_branch sub-field
 })
 
 

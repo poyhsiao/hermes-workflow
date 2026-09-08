@@ -32,3 +32,4 @@ Feature: Workflow Execution
     And an execution store
     When I execute the workflow
     Then the execution should complete with status failed
+    And the state should be restored to checkpoint

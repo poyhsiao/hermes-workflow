@@ -447,4 +447,8 @@ def then_remaining_steps_not_execute(execution_result: tuple[ExecutionStatus, Wo
 
 @then("the state should be restored to checkpoint")
 def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext]) -> None:
-    pass
+    _, ctx = execution_result
+    step1_result = ctx.get("step1")
+    assert step1_result is not None, "step1 should have result from before failure"
+    failing_step_result = ctx.get("failing_step")
+    assert failing_step_result is None, "failing_step should not have run after rollback"

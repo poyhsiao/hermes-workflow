@@ -166,8 +166,8 @@ permission:
 steps:
   - name: step1
     type: tool
-    tool: echo
     args:
+      tool: echo
       msg: hello
 """
         defn = parse_workflow_yaml(yaml_str)
@@ -192,15 +192,15 @@ steps:
         steps:
           - name: a1
             type: tool
-            tool: echo
             args:
+              tool: echo
               msg: a
       - name: branch_b
         steps:
           - name: b1
             type: tool
-            tool: echo
             args:
+              tool: echo
               msg: b
 """
         defn = parse_workflow_yaml(yaml_str)

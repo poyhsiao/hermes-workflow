@@ -84,6 +84,9 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
+        # Snapshot values under lock, then escape outside lock to prevent
+        # user-defined __str__ from re-entering WorkflowContext.set() under lock
+        replacements: list[tuple[str, str]] = []
         with self._lock:
             shared_items = list(self.shared.items())
             for key, val in shared_items:
@@ -100,7 +103,9 @@ class WorkflowContext:
                             escaped.append("\\" + ch)
                         else:
                             escaped.append(ch)
-                    result = result.replace(placeholder, "".join(escaped))
+                    replacements.append((placeholder, "".join(escaped)))
+        for placeholder, escaped in replacements:
+            result = result.replace(placeholder, escaped)
         return result
 
     def resolve_var_raw(self, template: str) -> str:

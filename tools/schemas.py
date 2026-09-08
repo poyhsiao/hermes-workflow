@@ -55,9 +55,10 @@ SCHEMAS: dict[str, dict] = {
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "name": {"type": "string", "description": "Name of the workflow definition."},
                     "yaml": {"type": "string", "description": "YAML workflow definition string."},
                 },
-                "required": ["yaml"],
+                "required": ["name", "yaml"],
             },
         },
     },
@@ -188,7 +189,6 @@ SCHEMAS: dict[str, dict] = {
                 "type": "object",
                 "properties": {
                     "workflow_name": {"type": "string", "description": "Name of the workflow."},
-                    "period": {"type": "string", "description": "Time period to analyze (e.g. '7d', '30d')."},
                 },
                 "required": ["workflow_name"],
             },
@@ -216,9 +216,9 @@ SCHEMAS: dict[str, dict] = {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Template name."},
-                    "yaml": {"type": "string", "description": "YAML workflow definition content."},
+                    "yaml_content": {"type": "string", "description": "YAML workflow definition content."},
                 },
-                "required": ["name", "yaml"],
+                "required": ["name", "yaml_content"],
             },
         },
     },
