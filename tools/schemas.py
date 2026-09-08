@@ -131,7 +131,6 @@ SCHEMAS: dict[str, dict] = {
             "type": "object",
             "properties": {
                 "workflow_name": {"type": "string", "description": "Name of the workflow (optional for global metrics)."},
-                "period": {"type": "string", "description": "Time period to analyze (e.g. '7d', '30d')."},
             },
         },
     },

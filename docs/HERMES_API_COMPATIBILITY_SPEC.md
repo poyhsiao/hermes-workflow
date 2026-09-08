@@ -49,7 +49,7 @@ Returns result string. **Risk**: Tool handler 執行時是否能拿到 `ctx`？�
 | 2 | `delegate_task` via Hermes | ✅ Fixed — `ctx.dispatch_tool()` with `_plugin_ctx` module global |
 | 3 | `pre_llm_call` return | ✅ Fixed — returns `{"context": msg}` |
 | 4 | `/workflow` dispatch | ✅ Fixed — both `register_command()` + `register_cli_command()` |
-| 5 | Tool schemas | ✅ Fixed — all 15 tools have OpenAI function-call schemas |
+| 5 | Tool schemas | ✅ Fixed — all 18 tools have OpenAI function-call schemas |
 
 ### Phase 5 — Integration Test
 
@@ -74,7 +74,7 @@ Manual verification required in live Hermes environment:
 
 | File | Change |
 |------|--------|
-| `tools/schemas.py` | **NEW** — 15 OpenAI function-call schemas |
+| `tools/schemas.py` | **NEW** — 18 OpenAI function-call schemas |
 | `__init__.py` | Keyword-arg `register_tool()`, dual command reg, fixed hooks |
 | `workflow/executor.py` | `plugin_ctx` param, `ctx.dispatch_tool()` for agent steps |
 | `tools/workflow_tools.py` | `_plugin_ctx` global, `plugin_ctx` threaded to `execute_steps` |
@@ -141,7 +141,7 @@ plugin_ctx.register_tool(
 
 Handler signature: `def handler(args: dict, **kwargs) -> str`
 
-All 15 tools in `tools/workflow_tools.py` need schemas. See Appendix A for full schema definitions.
+All 18 tools in `tools/workflow_tools.py` need schemas. See Appendix A for full schema definitions.
 
 ---
 
@@ -272,7 +272,7 @@ See Appendix A for all 15 tool schemas.
 ## Implementation Phases
 
 ### Phase 1: Tool Schema Registration (Breaking)
-- Add schema dicts to all 15 tools in `tools/workflow_tools.py`
+- Add schema dicts to all 18 tools in `tools/workflow_tools.py`
 - Change `plugin_ctx.register_tool(name, fn)` → keyword-arg form
 - Verify tools appear in Hermes `/tools` list
 
@@ -313,7 +313,7 @@ See Appendix A for all 15 tool schemas.
 
 ## Appendix A: Tool Schemas
 
-All 15 tools that need schemas:
+All 18 tools that need schemas:
 
 ```python
 WORKFLOW_RUN_SCHEMA = {

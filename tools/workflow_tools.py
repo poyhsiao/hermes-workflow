@@ -303,7 +303,7 @@ def workflow_rollback(
             from workflow.executor import execute_steps
             step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
             ctx.checkpoints.clear()  # fresh checkpoint chain for this run
-            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset)
+            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset, plugin_ctx=_plugin_ctx)
         finally:
             with _engines_lock:
                 _engines.pop(new_exec_id, None)
@@ -379,12 +379,11 @@ def workflow_suggest(context_messages: list[dict] | None = None, limit: int = 3)
     return {"ok": True, "suggestions": suggestions[:limit]}
 
 
-def workflow_metrics(workflow_name: str | None = None, period: str | None = None) -> dict:
+def workflow_metrics(workflow_name: str | None = None) -> dict:
     """Return Prometheus-format metrics for workflow executions.
 
     Args:
         workflow_name: filter metrics to a specific workflow (CLI path)
-        period: time period filter e.g. '7d', '30d' (Hermes schema path, future use)
     """
     from observability.logger import get_prometheus_metrics
     store = _get_store()
