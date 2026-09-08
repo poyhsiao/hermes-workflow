@@ -106,14 +106,11 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
 
     if plugin_ctx is not None:
         # Use Hermes dispatch_tool for proper tool integration
-        result_str = plugin_ctx.dispatch_tool(
-            "delegate_task",
-            {
-                "goal": resolved_goal,
-                "profile": resolved_profile or "default",
-                "context": ctx.shared,
-            },
-        )
+        result_str = plugin_ctx.dispatch_tool("delegate_task", {
+            "goal": resolved_goal,
+            "profile": resolved_profile or "default",
+            "context": ctx.shared,
+        })
         # dispatch_tool returns a string — parse it
         try:
             result = json.loads(result_str) if result_str else {}
@@ -144,13 +141,7 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
     return result
 
 
-def execute_parallel_branch(
-    step: Step,
-    ctx: WorkflowContext,
-    audit: AuditLogger,
-    permission_scope: PermissionScope | None = None,
-    plugin_ctx: Any = None,
-) -> dict:
+def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> dict:
     """Execute a parallel_branch step: all sub-branches run concurrently."""
     if not step.branches:
         return {}
@@ -175,13 +166,7 @@ def execute_parallel_branch(
     return results
 
 
-def _execute_branch(
-    branch: ParallelBranch,
-    ctx: WorkflowContext,
-    audit: AuditLogger,
-    permission_scope: PermissionScope | None = None,
-    plugin_ctx: Any = None,
-) -> Any:
+def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
     results = []
     for s in branch.steps:
         r = _execute_single_step(s, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
@@ -202,13 +187,7 @@ def execute_checkpoint_step(step: Step, ctx: WorkflowContext, audit: AuditLogger
 # ── Single step execution with error handling ───────────────────────────────────
 
 
-def _execute_single_step(
-    step: Step,
-    ctx: WorkflowContext,
-    audit: AuditLogger,
-    permission_scope: PermissionScope | None = None,
-    plugin_ctx: Any = None,
-) -> Any:
+def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
     """Execute one step with error handling, retry, and checkpoint."""
     event_bus = EventBus.get_instance()
 
@@ -354,12 +333,7 @@ def execute_steps(
 
                 try:
                     result = _execute_single_step(step, ctx, audit, definition.permission_scope, plugin_ctx=plugin_ctx)
-                    store.update_step(
-                        step_id,
-                        status="completed",
-                        output_json=json.dumps(result, default=str),
-                        ended_at=datetime.now(timezone.utc).isoformat(),
-                    )
+                    store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True
                 except Exception as e:  # noqa: BLE001

@@ -9,7 +9,6 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 from __future__ import annotations
 
 from typing import Callable
-
 __version__ = "1.1.0"
 __plugin_name__ = "hermes-dynamic-workflow"
 
@@ -147,7 +146,7 @@ def _pre_gateway_hook(event, gateway, session_store, **kwargs) -> dict | None:
     if not text.startswith("/workflow"):
         return None
 
-    args = text[len("/workflow ") :] if text.startswith("/workflow ") else ""
+    args = text[len("/workflow "):] if text.startswith("/workflow ") else ""
     result = _handle_workflow_command(args)
     # Respond via gateway
     try:

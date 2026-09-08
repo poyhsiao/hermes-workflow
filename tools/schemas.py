@@ -187,10 +187,10 @@ SCHEMAS: dict[str, dict] = {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Name of the workflow."},
+                    "workflow_name": {"type": "string", "description": "Name of the workflow."},
                     "period": {"type": "string", "description": "Time period to analyze (e.g. '7d', '30d')."},
                 },
-                "required": ["name"],
+                "required": ["workflow_name"],
             },
         },
     },

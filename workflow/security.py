@@ -23,10 +23,12 @@ if TYPE_CHECKING:
 # triggered. shlex + shell=False mitigates actual injection, but this blocks
 # operators that would be dangerous if shlex is bypassed or if the string
 # is later evaluated in a shell context.
-SHELL_OPERATOR_BLOCK = re.compile(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<|^\s*\$\(|^\s*[`]")
-# Anchors apply only to first two alternates: $() and backtick.
-# Remaining operators (;, &&, ||, >>, <<, <>, >, <) are unanchored —
-# caught anywhere in the string, which is intentional.
+SHELL_OPERATOR_BLOCK = re.compile(
+    r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<|^\s*\$\(|^\s*[`]"
+)
+# ponytail: original pattern without ^ anchors was correct; added ^\s* prefix
+# variants for completeness (non-breaking — unanchored alternates still cover
+# mid-string operators like "curl http://x.com?a=1;b=2").
 
 # ── Destructive operation patterns ──────────────────────────────────────────────
 DESTRUCTIVE_PATTERNS = [
