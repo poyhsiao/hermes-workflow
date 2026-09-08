@@ -194,6 +194,8 @@ class ExecutionStore:
                 parsed = yaml.safe_load(d.get("definition_yaml") or "")
                 d["description"] = (parsed or {}).get("description", "")
             except Exception:  # noqa: BLE001
+                import logging
+                logging.getLogger(__name__).debug("Could not parse YAML description", exc_info=True)
                 d["description"] = ""
             results.append(d)
         return results

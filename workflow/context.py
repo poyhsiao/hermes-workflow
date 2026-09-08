@@ -19,7 +19,6 @@ class WorkflowContext:
     pipeline: list[Any] = field(default_factory=list)
     checkpoints: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
-    # ponytail: lock for thread-safe writes in parallel branches
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set(self, key: str, value: Any) -> None:
