@@ -2,12 +2,24 @@
 
 All notable changes to `hermes-dynamic-workflow` are documented here.
 
-## [1.1.0] — Unreleased
+## [Unreleased] — 2026-09-07
+
+### Breaking — Hermes v0.21.0 API Compatibility
+
+- **`register_tool()` signature** — now uses keyword args (`name=`, `toolset=`, `schema=`, `handler=`) per Hermes plugin API. All 18 tools registered with OpenAI function-call schemas.
+- **`on_message` hook removed** — replaced by `ctx.register_command("workflow", ...)` for in-session `/workflow` slash commands (works in CLI and gateway).
+- **`pre_llm_call` return** — now returns `{"context": msg}` instead of calling non-existent `hook_ctx.add_system_message()`.
+- **`pre_gateway_dispatch` added** — handles `/workflow` commands from gateway chat platforms (Telegram, Discord, etc.).
+- **Tool schemas** — all 18 tools now have proper OpenAI function-call schemas in `tools/schemas.py`.
+- **`delegate_task` integration** — agent steps now use `ctx.dispatch_tool("delegate_task", {...})` via stored `PluginContext`, replacing the non-existent `tools.delegate_tool` import. Falls back to direct import if no `plugin_ctx`.
+- **Dual command registration** — both `ctx.register_command()` (`/workflow` slash) and `ctx.register_cli_command()` (`hermes workflow` terminal) now registered for full CLI + gateway support.
+
+## [1.1.0] — 2026-09-07
 
 ### Security
 
 - **Shell injection guard** — `execute_tool_step` now uses `shell=False` + `shlex.split` for subprocess fallback, eliminating shell injection vectors. Shell operators (`$()`, backtick, `;`, `&&`, `||`, `>>`, `<<`) are blocked as defense-in-depth even when shlex parsing is bypassed.
-- **Command allowlist** — `SHELL_SAFE_COMMANDS` whitelist for subprocess fallback. Only read-only/safe commands (`ls`, `cat`, `grep`, `git`, `curl`, etc.) are permitted; `python`/`perl`/`ruby` excluded to prevent inline code execution.
+- **Command allowlist** — `SHELL_SAFE_COMMANDS` whitelist for subprocess fallback. Only read-only/safe commands (`ls`, `cat`, `grep`, `git`, etc.) are permitted; `python`/`perl`/`ruby` excluded to prevent inline code execution.
 - **Workflow permission scope** — `permission.allowed_tools` / `permission.blocked_tools` per workflow definition; enforced at tool dispatch time.
 - **Echo rm detection** — patterns like `echo rm -rf` are caught and blocked; the echo prefix is stripped before destructive pattern matching.
 - **Prometheus label escaping** — `workflow_executions_total` / `workflow_retries_total` now escape `\`, `"`, newlines in label values to prevent metric injection.

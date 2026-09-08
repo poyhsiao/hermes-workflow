@@ -91,7 +91,7 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
     return result
 
 
-def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger) -> Any:
+def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plugin_ctx: Any | None = None) -> Any:
     """Execute an agent step via delegate_task."""
     resolved_goal = ctx.resolve_var(step.agent_goal or "")
     resolved_profile = ctx.resolve_var(step.agent_profile or "")
@@ -158,7 +158,7 @@ def execute_checkpoint_step(step: Step, ctx: WorkflowContext, audit: AuditLogger
 # ── Single step execution with error handling ───────────────────────────────────
 
 
-def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
+def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any | None = None) -> Any:
     """Execute one step with error handling, retry, and checkpoint."""
     event_bus = EventBus.get_instance()
 
@@ -170,7 +170,7 @@ def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, p
             if step.step_type == StepType.TOOL:
                 result = execute_tool_step(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.AGENT:
-                result = execute_agent_step(step, ctx, audit)
+                result = execute_agent_step(step, ctx, audit, plugin_ctx)
             elif step.step_type == StepType.PARALLEL_BRANCH:
                 result = execute_parallel_branch(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.CHECKPOINT:
@@ -200,6 +200,7 @@ def execute_steps(
     audit: AuditLogger,
     stop_event: threading.Event | None = None,
     resume_from_step: int = 0,
+    plugin_ctx: Any | None = None,
 ) -> ExecutionStatus:
     """Execute all steps of a workflow according to dependency graph.
 
@@ -285,7 +286,7 @@ def execute_steps(
                 store.update_step(step_id, started_at=started_at)
 
                 try:
-                    result = _execute_single_step(step, ctx, audit, definition.permission_scope)
+                    result = _execute_single_step(step, ctx, audit, definition.permission_scope, plugin_ctx)
                     store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), ended_at=datetime.now(timezone.utc).isoformat())
                     completed.add(step.name)
                     done = True

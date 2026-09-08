@@ -8,100 +8,135 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 
 from __future__ import annotations
 
+import json
+
+__version__ = "1.1.0"
+__plugin_name__ = "hermes-dynamic-workflow"
+
 # ── Plugin manifest ──────────────────────────────────────────────────────────────
 
 
-__version__ = "1.0.0"
-__plugin_name__ = "hermes-dynamic-workflow"
-
-# ── Hermes plugin entry point ───────────────────────────────────────────────────
-
-
-def register(plugin_ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
+def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
     """
     Called by Hermes PluginManager on discovery.
     Register all hooks, tools, and CLI commands here.
     """
-    # Import here to avoid hard dep at import time (Hermes may not be fully loaded)
     import cli.workflow_commands as wc
     import tools.workflow_tools as wt
+    from tools.schemas import SCHEMAS
 
-    # ── Register tools ────────────────────────────────────────────────────────
-    for tool_fn in [
-        wt.workflow_run,
-        wt.workflow_stop,
-        wt.workflow_status,
-        wt.workflow_define,
-        wt.workflow_delete,
-        wt.workflow_list,
-        wt.workflow_show,
-        wt.workflow_history,
-        wt.workflow_rollback,
-        wt.workflow_export,
-        wt.workflow_import,
-        wt.workflow_diff,
-        wt.workflow_metrics,
-        wt.workflow_suggest,
-        wt.workflow_template_save,
-        wt.workflow_template_list,
-        wt.workflow_template_load,
-        wt.workflow_template_delete,
-    ]:
-        plugin_ctx.register_tool(tool_fn.__name__, tool_fn)
+    # Store plugin context for use in agent steps (delegate_task dispatch)
+    wt._set_plugin_ctx(ctx)
 
-    # ── Register CLI subcommand ───────────────────────────────────────────────
-    plugin_ctx.register_cli_command("workflow", wc.add_workflow_parser, wc.print_result)
+    # Tool name → handler function mapping
+    tool_handlers: dict[str, callable] = {
+        "workflow_run": wt.workflow_run,
+        "workflow_stop": wt.workflow_stop,
+        "workflow_status": wt.workflow_status,
+        "workflow_define": wt.workflow_define,
+        "workflow_delete": wt.workflow_delete,
+        "workflow_list": wt.workflow_list,
+        "workflow_show": wt.workflow_show,
+        "workflow_history": wt.workflow_history,
+        "workflow_rollback": wt.workflow_rollback,
+        "workflow_export": wt.workflow_export,
+        "workflow_import": wt.workflow_import,
+        "workflow_diff": wt.workflow_diff,
+        "workflow_metrics": wt.workflow_metrics,
+        "workflow_suggest": wt.workflow_suggest,
+        "workflow_template_save": wt.workflow_template_save,
+        "workflow_template_list": wt.workflow_template_list,
+        "workflow_template_load": wt.workflow_template_load,
+        "workflow_template_delete": wt.workflow_template_delete,
+    }
 
-    # ── Register hooks ────────────────────────────────────────────────────────
-    plugin_ctx.register_hook("pre_llm_call", _pre_llm_hook)
-    plugin_ctx.register_hook("on_message", _on_message_hook)
+    # Register tools with schema + handler (Hermes v0.21.0 keyword-arg API)
+    for name, handler in tool_handlers.items():
+        def make_wrapper(h):
+            def wrapper(args, **kwargs):
+                result = h(**args)
+                return json.dumps(result) if isinstance(result, dict) else result
+            return wrapper
+        ctx.register_tool(
+            name=name,
+            toolset="workflow",
+            schema=SCHEMAS[name],
+            handler=make_wrapper(handler),
+            is_async=False,
+            description="",
+            emoji="🔁",
+        )
 
-    # ── Ensure DB is initialized ───────────────────────────────────────────────
+    # Register in-session slash command (/workflow) — works in both CLI and gateway
+    ctx.register_command(
+        "workflow",
+        handler=_handle_workflow_command,
+        description="Dynamic workflow management: run, define, list, stop, etc.",
+        args_hint="<verb> [args]",
+    )
+
+    # Register terminal CLI command: hermes workflow <verb>
+    ctx.register_cli_command(
+        name="workflow",
+        help="Dynamic workflow management (run, define, list, stop, etc.)",
+        setup_fn=wc.add_workflow_parser,
+        handler_fn=_handle_cli_workflow,
+    )
+
+    # Register hooks
+    ctx.register_hook("pre_llm_call", _pre_llm_hook)
+
+    # Ensure DB is initialized
     from storage.sqlite_store import ExecutionStore
-    ExecutionStore()  # ensure schema created on first access
+    ExecutionStore()
+
+
+# ── Slash command handler ───────────────────────────────────────────────────────
+
+
+def _handle_workflow_command(raw_args: str) -> str | None:
+    """Handle /workflow <verb> [args] from any session (CLI or gateway)."""
+    import tools.workflow_tools as wt
+    from triggers.slash_command import WorkflowSlashDispatcher
+
+    dispatcher = WorkflowSlashDispatcher(wt)
+    result = dispatcher.dispatch(f"/workflow {raw_args}")
+    if result.get("ok"):
+        return str(result)
+    return f"Error: {result.get('error', 'unknown error')}"
+
+
+def _handle_cli_workflow(args) -> None:
+    """Handle `hermes workflow <verb>` terminal command (argparse Namespace)."""
+    import cli.workflow_commands as wc
+    result = wc.dispatch_workflow(args)
+    wc.print_result(result)
 
 
 # ── Hooks ─────────────────────────────────────────────────────────────────────
 
 
-def _pre_llm_hook(hook_ctx: "HookContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
+def _pre_llm_hook(
+    session_id: str,
+    user_message: str,
+    conversation_history: list,
+    is_first_turn: bool,
+    model: str,
+    platform: str,
+    **kwargs,
+) -> str | dict | None:
     """pre_llm_call: detect workflow intent from conversation and suggest."""
-    messages = getattr(hook_ctx, "messages", [])
+    messages = conversation_history or []
     if not messages:
-        return
+        return None
 
     import triggers.intent_detector as idet
     suggestions = idet.detect_workflow_intent(messages)
-    if suggestions:
-        msg = idet.make_suggestion_message(suggestions)
-        if msg:
-            hook_ctx.add_system_message(msg)
+    if not suggestions:
+        return None
 
-
-def _on_message_hook(hook_ctx: "HookContext") -> None:  # type: ignore[name-defined]  # noqa: UP037,F821
-    """on_message: detect /workflow slash command and dispatch."""
-    content = getattr(hook_ctx, "content", "") or ""
-    if not content.startswith("/workflow"):
-        return
-
-    import tools.workflow_tools as wt
-    from triggers.slash_command import WorkflowSlashDispatcher
-
-    dispatcher = WorkflowSlashDispatcher(wt)
-    result = dispatcher.dispatch(content)
-
-    if result.get("ok"):
-        # Respond inline with result
-        hook_ctx.set_response(str(result))
-    else:
-        hook_ctx.set_error(result.get("error", "Unknown error"))
-
-
-# ── CLI integration ─────────────────────────────────────────────────────────────
-
-
-def add_workflow_subparser(subparsers):
-    """Exposed for Hermes CLI registration."""
-    import cli.workflow_commands as wc
-    wc.add_workflow_parser(subparsers)
-    return wc.print_result
+    msg = idet.make_suggestion_message(suggestions)
+    if not msg:
+        return None
+    # Return dict form — injected into user message to preserve prompt caching
+    return {"context": msg}
