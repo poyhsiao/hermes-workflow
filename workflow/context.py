@@ -104,8 +104,8 @@ class WorkflowContext:
                         else:
                             escaped.append(ch)
                     replacements.append((placeholder, "".join(escaped)))
-        for placeholder, escaped in replacements:
-            result = result.replace(placeholder, escaped)
+        for placeholder, escaped_str in replacements:
+            result = result.replace(placeholder, escaped_str)
         return result
 
     def resolve_var_raw(self, template: str) -> str:
