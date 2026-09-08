@@ -8,6 +8,8 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 __version__ = "1.1.0"
 __plugin_name__ = "hermes-dynamic-workflow"
 
@@ -27,7 +29,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     wt._set_plugin_ctx(ctx)
 
     # Tool name → handler function mapping
-    tool_handlers: dict[str, callable] = {
+    tool_handlers: dict[str, Callable] = {
         "workflow_run": wt.workflow_run,
         "workflow_stop": wt.workflow_stop,
         "workflow_status": wt.workflow_status,
@@ -48,13 +50,20 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
         "workflow_template_delete": wt.workflow_template_delete,
     }
 
+    import json
+
+    def _wrap_handler(h: Callable) -> Callable:
+        def wrapper(*args, **kwargs):
+            return json.dumps(h(*args, **kwargs))
+        return wrapper
+
     # Register tools with schema + handler (Hermes v0.21.0 keyword-arg API)
     for name, handler in tool_handlers.items():
         ctx.register_tool(
             name=name,
             toolset="workflow",
             schema=SCHEMAS[name],
-            handler=handler,
+            handler=_wrap_handler(handler),
             is_async=False,
             description="",
             emoji="🔁",
@@ -82,6 +91,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
     # Ensure DB is initialized
     from storage.sqlite_store import ExecutionStore
+
     ExecutionStore()
 
 
@@ -94,7 +104,7 @@ def _handle_workflow_command(raw_args: str) -> str | None:
     from triggers.slash_command import WorkflowSlashDispatcher
 
     dispatcher = WorkflowSlashDispatcher(wt)
-    result = dispatcher.dispatch(f"/workflow {raw_args}")
+    result = dispatcher.dispatch(f"/workflow {raw_args}".rstrip())
     if result.get("ok"):
         return str(result)
     return f"Error: {result.get('error', 'unknown error')}"
@@ -103,7 +113,8 @@ def _handle_workflow_command(raw_args: str) -> str | None:
 def _handle_cli_workflow(args) -> None:
     """Handle `hermes workflow <verb>` terminal command (argparse Namespace)."""
     import cli.workflow_commands as wc
-    result = wc.dispatch_workflow(args)
+
+    result = wc._dispatch_workflow(args)
     wc.print_result(result)
 
 
@@ -125,6 +136,7 @@ def _pre_llm_hook(
         return None
 
     import triggers.intent_detector as idet
+
     suggestions = idet.detect_workflow_intent(messages)
     if not suggestions:
         return None
@@ -138,11 +150,15 @@ def _pre_llm_hook(
 
 def _pre_gateway_hook(event, gateway, session_store, **kwargs) -> dict | None:
     """pre_gateway_dispatch: handle /workflow commands from gateway chat platforms."""
+    import logging
+    _gateway_logger = logging.getLogger(__name__)
+
     text = getattr(event, "text", "") or ""
-    if not text.startswith("/workflow"):
+    parts = text.split(maxsplit=1)
+    if not parts or parts[0] != "/workflow":
         return None
 
-    args = text[len("/workflow "):] if text.startswith("/workflow ") else ""
+    args = parts[1] if len(parts) > 1 else ""
     result = _handle_workflow_command(args)
     # Respond via gateway
     try:
@@ -150,6 +166,6 @@ def _pre_gateway_hook(event, gateway, session_store, **kwargs) -> dict | None:
             {"text": result or "done"},
             session_id=getattr(event.source, "chat_id", None),
         )
-    except Exception:  # noqa: BLE001
-        pass  # swallow gateway send errors — command already executed
+    except Exception as e:  # noqa: BLE001
+        _gateway_logger.exception("Gateway send failed: %s", e)
     return {"action": "skip"}  # prevent normal agent dispatch

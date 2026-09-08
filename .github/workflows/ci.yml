@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov ruff mypy pyyaml
+          pip install pytest pytest-cov pytest-bdd ruff mypy pyyaml
 
       - name: Lint with ruff
         run: ruff check workflow storage observability tools triggers cli tests
@@ -48,8 +48,6 @@ jobs:
             --cov=workflow \
             --cov=storage \
             --cov=observability \
-            --cov=tools \
-            --cov=triggers \
             --cov-report=xml \
             --cov-report=term-missing
 

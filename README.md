@@ -237,7 +237,7 @@ permission:
     - edit
 ```
 
-**Command allowlist** — when a tool is not found in the Hermes registry, the subprocess fallback is used. Only safe read-only commands are permitted (`ls`, `cat`, `grep`, `stat`, `md5sum`, `sha256sum`, etc.).
+**Command allowlist** — when a tool is not found in the Hermes registry, the subprocess fallback is used. Only safe read-only commands are permitted (`ls`, `cat`, `grep`, `stat`, `git`, `md5sum`, `sha256sum`, etc.).
 
 **Defense-in-depth** — shell operators (`;`, `&&`, `||`, `$()`, backtick, `>>`, `<<`) are blocked even when `shell=False` is used. Commands like `rm -rf`, `dd`, `mkfs`, `curl | bash` are blocked. `echo rm -rf` style obfuscation is also caught.
 

@@ -61,17 +61,21 @@ class TestValidateParallelBranch:
 
     def test_parallel_branch_branch_missing_name_rejects(self):
         with pytest.raises(ValidationError, match="branch missing 'name'"):
-            validate_workflow({
-                **VALID_MINIMAL,
-                "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"steps": []}]}],
-            })
+            validate_workflow(
+                {
+                    **VALID_MINIMAL,
+                    "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"steps": []}]}],
+                }
+            )
 
     def test_parallel_branch_branch_missing_steps_rejects(self):
         with pytest.raises(ValidationError, match="branch missing 'name'"):
-            validate_workflow({
-                **VALID_MINIMAL,
-                "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"name": "b1"}]}],
-            })
+            validate_workflow(
+                {
+                    **VALID_MINIMAL,
+                    "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"name": "b1"}]}],
+                }
+            )
 
 
 class TestValidateAgent:
@@ -80,16 +84,20 @@ class TestValidateAgent:
             validate_workflow({**VALID_MINIMAL, "steps": [{"name": "a1", "type": "agent", "agent": {}}]})
 
     def test_agent_with_profile_valid(self):
-        validate_workflow({
-            **VALID_MINIMAL,
-            "steps": [{"name": "a1", "type": "agent", "agent": {"profile": "coder"}}],
-        })
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "a1", "type": "agent", "agent": {"profile": "coder"}}],
+            }
+        )
 
     def test_agent_with_goal_valid(self):
-        validate_workflow({
-            **VALID_MINIMAL,
-            "steps": [{"name": "a1", "type": "agent", "agent": {"goal": "fix the bug"}}],
-        })
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "a1", "type": "agent", "agent": {"goal": "fix the bug"}}],
+            }
+        )
 
 
 class TestValidateCompensate:
@@ -110,7 +118,12 @@ class TestValidateCompensate:
             validate_workflow({**VALID_MINIMAL, "steps": [{"name": "s1", "compensate": {"tool": "undo"}}]})
 
     def test_compensate_valid(self):
-        validate_workflow({**VALID_MINIMAL, "steps": [{"name": "s1", "compensate": {"tool": "undo", "args": {"undo_action": "delete"}}}]})
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "s1", "compensate": {"tool": "undo", "args": {"undo_action": "delete"}}}],
+            }
+        )
 
 
 class TestValidateRetry:
@@ -153,8 +166,8 @@ permission:
 steps:
   - name: step1
     type: tool
-    tool: echo
     args:
+      tool: echo
       msg: hello
 """
         defn = parse_workflow_yaml(yaml_str)
@@ -166,6 +179,8 @@ steps:
         assert defn2.concurrency.value == "parallel"
         assert len(defn2.steps) == 1
         assert defn2.steps[0].name == "step1"
+        assert defn2.steps[0].args["tool"] == "echo"
+        assert defn2.steps[0].args["msg"] == "hello"
 
     def test_dump_parallel_branch_workflow(self):
         yaml_str = """
@@ -179,15 +194,15 @@ steps:
         steps:
           - name: a1
             type: tool
-            tool: echo
             args:
+              tool: echo
               msg: a
       - name: branch_b
         steps:
           - name: b1
             type: tool
-            tool: echo
             args:
+              tool: echo
               msg: b
 """
         defn = parse_workflow_yaml(yaml_str)
@@ -195,6 +210,14 @@ steps:
         defn2 = parse_workflow_yaml(dumped)
         assert defn2.steps[0].name == "fan_out"
         assert defn2.steps[0].step_type.value == "parallel_branch"
+        branch_a = defn2.steps[0].branches[0]
+        assert branch_a.name == "branch_a"
+        assert branch_a.steps[0].args["tool"] == "echo"
+        assert branch_a.steps[0].args["msg"] == "a"
+        branch_b = defn2.steps[0].branches[1]
+        assert branch_b.name == "branch_b"
+        assert branch_b.steps[0].args["tool"] == "echo"
+        assert branch_b.steps[0].args["msg"] == "b"
 
 
 if __name__ == "__main__":

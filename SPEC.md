@@ -244,10 +244,10 @@ steps:
 class WorkflowContext:
     workflow_id: str
     execution_id: str
-    shared: dict           # all steps read/write here
-    pipeline: list         # ordered output list (last = latest)
-    checkpoints: list      # list of {step_index, snapshot}
-    events: list           # emitted events
+    shared: dict  # all steps read/write here
+    pipeline: list  # ordered output list (last = latest)
+    checkpoints: list  # list of {step_index, snapshot}
+    events: list  # emitted events
 ```
 
 ---

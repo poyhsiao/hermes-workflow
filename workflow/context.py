@@ -19,7 +19,6 @@ class WorkflowContext:
     pipeline: list[Any] = field(default_factory=list)
     checkpoints: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
-    # ponytail: lock for thread-safe writes in parallel branches
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set(self, key: str, value: Any) -> None:
@@ -64,7 +63,9 @@ class WorkflowContext:
             self.events = list(checkpoint.get("events", []))
             # Trim checkpoints after the rollback point
             for idx, cp in enumerate(self.checkpoints):
-                if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get("shared"):
+                if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get(
+                    "shared"
+                ):
                     self.checkpoints = self.checkpoints[: idx + 1]
                     break
 
@@ -83,8 +84,13 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
+        # Snapshot items under lock, then process outside to prevent user-defined
+        # __str__ from re-entering WorkflowContext.set() under the non-reentrant lock
+        shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
+        while True:
+            replaced = False
             for key, val in shared_items:
                 placeholder = "{{ " + key + " }}"
                 if placeholder in result:
@@ -100,6 +106,9 @@ class WorkflowContext:
                         else:
                             escaped.append(ch)
                     result = result.replace(placeholder, "".join(escaped))
+                    replaced = True
+            if not replaced:
+                break
         return result
 
     def resolve_var_raw(self, template: str) -> str:
@@ -111,12 +120,19 @@ class WorkflowContext:
         if not isinstance(template, str):
             return template
         result = template
+        # Snapshot items under lock, then process outside to prevent re-entrancy
+        shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
+        while True:
+            replaced = False
             for key, val in shared_items:
                 placeholder = "{{ " + key + " }}"
                 if placeholder in result:
                     result = result.replace(placeholder, str(val))
+                    replaced = True
+            if not replaced:
+                break
         return result
 
     def resolve_args(self, args: dict) -> dict:
@@ -134,13 +150,16 @@ class WorkflowContext:
         return resolved
 
     def to_json(self) -> str:
-        return json.dumps({
-            "workflow_id": self.workflow_id,
-            "execution_id": self.execution_id,
-            "shared": self.shared,
-            "pipeline": self.pipeline,
-            "events": self.events,
-        }, default=str)
+        return json.dumps(
+            {
+                "workflow_id": self.workflow_id,
+                "execution_id": self.execution_id,
+                "shared": self.shared,
+                "pipeline": self.pipeline,
+                "events": self.events,
+            },
+            default=str,
+        )
 
     @classmethod
     def from_json(cls, json_str: str) -> WorkflowContext:

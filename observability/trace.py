@@ -22,7 +22,9 @@ try:
         return _tracer.start_as_current_span(f"workflow/{workflow_name}", attributes={"execution_id": execution_id})
 
     def trace_step(step_name: str, step_type: str, execution_id: str) -> Any:  # type: ignore[misc]
-        return _tracer.start_as_current_span(f"step/{step_name}", attributes={"step_type": step_type, "execution_id": execution_id})
+        return _tracer.start_as_current_span(
+            f"step/{step_name}", attributes={"step_type": step_type, "execution_id": execution_id}
+        )
 
     @contextmanager
     def span(name: str, attrs: dict | None = None):

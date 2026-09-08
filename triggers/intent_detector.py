@@ -27,18 +27,17 @@ def detect_workflow_intent(messages: list[dict]) -> list[dict]:
     suggestions = []
     # Look at last 3 messages
     recent = messages[-3:]
-    combined_text = " ".join(
-        m.get("content", "") if isinstance(m, dict) else str(m)
-        for m in recent
-    ).lower()
+    combined_text = " ".join(m.get("content", "") if isinstance(m, dict) else str(m) for m in recent).lower()
 
     for keyword, workflow_name in KEYWORD_HINTS.items():
         if keyword in combined_text:
-            suggestions.append({
-                "workflow": workflow_name,
-                "reason": f"'{keyword}' detected in conversation",
-                "suggest": f"/workflow run {workflow_name}",
-            })
+            suggestions.append(
+                {
+                    "workflow": workflow_name,
+                    "reason": f"'{keyword}' detected in conversation",
+                    "suggest": f"/workflow run {workflow_name}",
+                }
+            )
 
     return suggestions
 

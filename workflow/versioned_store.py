@@ -1,4 +1,5 @@
 """Version control for workflow definitions — rollback to prior versions."""
+
 from __future__ import annotations
 
 import difflib
@@ -15,9 +16,7 @@ class VersionedStore:
 
     def save(self, defn: WorkflowDefinition, changed_by: str | None = None, change_summary: str = "") -> None:
         """Save a new version of an existing workflow."""
-        existing = self.store.db.execute(
-            "SELECT id FROM workflow_definitions WHERE name=?", (defn.name,)
-        ).fetchone()
+        existing = self.store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (defn.name,)).fetchone()
         if existing:
             self.store.update_definition(existing["id"], defn, changed_by, change_summary)
         else:
@@ -26,9 +25,7 @@ class VersionedStore:
     def get(self, name: str, version: int | None = None) -> WorkflowDefinition | None:
         """Get a specific version, or latest if version is None."""
         if version is not None:
-            existing = self.store.db.execute(
-                "SELECT id FROM workflow_definitions WHERE name=?", (name,)
-            ).fetchone()
+            existing = self.store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
             if not existing:
                 return None
             return self.store.get_version(existing["id"], version)
@@ -36,14 +33,14 @@ class VersionedStore:
 
     def list_versions(self, name: str) -> list[dict]:
         """List all versions of a named workflow."""
-        existing = self.store.db.execute(
-            "SELECT id FROM workflow_definitions WHERE name=?", (name,)
-        ).fetchone()
+        existing = self.store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
         if not existing:
             return []
         return self.store.list_versions(existing["id"])
 
-    def rollback_definition(self, name: str, to_version: int, changed_by: str | None = None) -> WorkflowDefinition | None:
+    def rollback_definition(
+        self, name: str, to_version: int, changed_by: str | None = None
+    ) -> WorkflowDefinition | None:
         """Rollback a workflow definition to a prior version."""
         old_defn = self.get(name, to_version)
         if not old_defn:
@@ -62,13 +59,15 @@ class VersionedStore:
         yaml1 = def1.definition_yaml or ""
         yaml2 = def2.definition_yaml or ""
 
-        unified = list(difflib.unified_diff(
-            yaml1.splitlines(keepends=True),
-            yaml2.splitlines(keepends=True),
-            fromfile=f"v{v1}",
-            tofile=f"v{v2}",
-            lineterm="",
-        ))
+        unified = list(
+            difflib.unified_diff(
+                yaml1.splitlines(keepends=True),
+                yaml2.splitlines(keepends=True),
+                fromfile=f"v{v1}",
+                tofile=f"v{v2}",
+                lineterm="",
+            )
+        )
         return {
             "ok": True,
             "name": name,
@@ -80,7 +79,5 @@ class VersionedStore:
         }
 
     def _current_version(self, name: str) -> int:
-        row = self.store.db.execute(
-            "SELECT version FROM workflow_definitions WHERE name=?", (name,)
-        ).fetchone()
+        row = self.store.db.execute("SELECT version FROM workflow_definitions WHERE name=?", (name,)).fetchone()
         return row["version"] if row else 0

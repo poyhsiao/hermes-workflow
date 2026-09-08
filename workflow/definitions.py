@@ -20,9 +20,7 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
     if len(docs) == 0:
         raise ValidationError("Empty YAML document")
     if len(docs) > 1:
-        raise ValidationError(
-            f"Multiple YAML documents ({len(docs)}) found; workflow must be a single document"
-        )
+        raise ValidationError(f"Multiple YAML documents ({len(docs)}) found; workflow must be a single document")
 
     data = docs[0]
     if data is None or not isinstance(data, dict):
@@ -33,16 +31,13 @@ def parse_workflow_yaml(yaml_str: str) -> WorkflowDefinition:
 
 _WF_KNOWN_FIELDS: frozenset[str] = frozenset({
     "name", "version", "description", "concurrency", "max_duration",
-    "error_policy", "rollback_policy", "context_schema", "permission", "steps",
+    "error_policy", "rollback_policy", "permission", "steps",
     "context",  # legacy top-level field (parsed by WorkflowDefinition.from_dict)
 })
 _WF_STEP_KNOWN_FIELDS: frozenset[str] = frozenset({
     "name", "type", "requires", "args", "on_error", "retry",
-    "compensate", "agent", "parallel_branch", "event", "checkpoint",
-    "event_name", "tool", "command",  # legacy YAML step-level fields (silently ignored by parser)
-    "agent_goal", "agent_profile",    # top-level agent step fields
-    "branches",                        # parallel_branch sub-field
-    "profile", "goal",                 # agent sub-fields (when agent is flat dict, not nested)
+    "compensate", "agent", "event",
+    "branches",  # parallel_branch sub-field
 })
 
 
@@ -119,7 +114,11 @@ def validate_workflow(data: dict) -> None:
             if compensate:
                 if not isinstance(compensate, dict):
                     errors.append(f"Step '{name}': 'compensate' must be a dict")
-                elif not compensate.get("tool") or not isinstance(compensate.get("tool"), str) or not compensate["tool"].strip():
+                elif (
+                    not compensate.get("tool")
+                    or not isinstance(compensate.get("tool"), str)
+                    or not compensate["tool"].strip()
+                ):
                     errors.append(f"Step '{name}': compensate.tool must be a non-empty string")
                 elif "args" not in compensate or not isinstance(compensate["args"], dict):
                     errors.append(f"Step '{name}': compensate.args must be a dict")
@@ -129,7 +128,9 @@ def validate_workflow(data: dict) -> None:
             if retry:
                 if not isinstance(retry, dict):
                     errors.append(f"Step '{name}': 'retry' must be a dict")
-                elif "max_attempts" in retry and (not isinstance(retry["max_attempts"], int) or retry["max_attempts"] < 1):
+                elif "max_attempts" in retry and (
+                    not isinstance(retry["max_attempts"], int) or retry["max_attempts"] < 1
+                ):
                     errors.append(f"Step '{name}': retry.max_attempts must be a positive int")
 
     if errors:

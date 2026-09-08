@@ -44,6 +44,7 @@ def _get_store() -> ExecutionStore:
 
 _VALID_CONTEXT_TYPES: set = {str, int, float, bool, list, dict}
 
+
 def _validate_context_arg(key: str, value: Any, allowed_keys: set[str]) -> tuple[bool, str]:
     """Validate a single context arg against schema. Returns (ok, error_msg)."""
     if key not in allowed_keys:
@@ -52,11 +53,21 @@ def _validate_context_arg(key: str, value: Any, allowed_keys: set[str]) -> tuple
     if isinstance(value, type):
         return False, f"context key '{key}': type objects not allowed"
     if not isinstance(value, (type(None), str, int, float, bool, list, dict)):
-        return False, f"context key '{key}': type {type(value).__name__} not allowed (must be str|int|float|bool|list|dict)"
+        return (
+            False,
+            f"context key '{key}': type {type(value).__name__} not allowed (must be str|int|float|bool|list|dict)",
+        )
     return True, ""
 
 
-def workflow_run(name: str, args: dict | None = None, context_overrides: dict | None = None, triggered_by: str = "tool", triggered_by_user: str | None = None, **kwargs) -> dict:
+def workflow_run(
+    name: str,
+    args: dict | None = None,
+    context_overrides: dict | None = None,
+    triggered_by: str = "tool",
+    triggered_by_user: str | None = None,
+    **kwargs,
+) -> dict:
     """Run a named workflow with given args. Returns execution_id immediately."""
     store = _get_store()
     defn = store.get_definition(name)
@@ -255,6 +266,7 @@ def workflow_rollback(
 
     # Create new execution with restored context
     import uuid
+
     new_exec_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
@@ -287,11 +299,15 @@ def workflow_rollback(
     store.create_execution(new_record, ctx.to_json())
 
     audit = AuditLogger(store)
-    audit.log(new_exec_id, "workflow.rollback", details={
-        "from_execution": execution_id,
-        "checkpoint_restored": checkpoint is not None,
-        "version": to_version,
-    })
+    audit.log(
+        new_exec_id,
+        "workflow.rollback",
+        details={
+            "from_execution": execution_id,
+            "checkpoint_restored": checkpoint is not None,
+            "version": to_version,
+        },
+    )
 
     engine = WorkflowEngine(defn, ctx, new_record, store)
     with _engines_lock:
@@ -301,9 +317,19 @@ def workflow_rollback(
         try:
             # ponytail: resume from checkpoint step_index (skip already-completed steps)
             from workflow.executor import execute_steps
+
             step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
             ctx.checkpoints.clear()  # fresh checkpoint chain for this run
-            execute_steps(defn, ctx, new_record, store, audit, stop_event=engine._stop_event, resume_from_step=step_offset, plugin_ctx=_plugin_ctx)
+            execute_steps(
+                defn,
+                ctx,
+                new_record,
+                store,
+                audit,
+                stop_event=engine._stop_event,
+                resume_from_step=step_offset,
+                plugin_ctx=_plugin_ctx,
+            )
         finally:
             with _engines_lock:
                 _engines.pop(new_exec_id, None)
@@ -365,8 +391,7 @@ def workflow_suggest(context_messages: list[dict] | None = None, limit: int = 3)
     if context_messages:
         # Backward compat: keyword-match against conversation context
         context_text = " ".join(
-            m.get("content", "") if isinstance(m, dict) else str(m)
-            for m in context_messages[-5:]
+            m.get("content", "") if isinstance(m, dict) else str(m) for m in context_messages[-5:]
         ).lower()
         for d in defs:
             name = d["name"].lower()
@@ -379,14 +404,14 @@ def workflow_suggest(context_messages: list[dict] | None = None, limit: int = 3)
     return {"ok": True, "suggestions": suggestions[:limit]}
 
 
-def workflow_metrics(workflow_name: str | None = None, period: str | None = None) -> dict:
+def workflow_metrics(workflow_name: str | None = None) -> dict:
     """Return Prometheus-format metrics for workflow executions.
 
     Args:
         workflow_name: filter metrics to a specific workflow (CLI path)
-        period: time period filter e.g. '7d', '30d' (Hermes schema path, future use)
     """
     from observability.logger import get_prometheus_metrics
+
     store = _get_store()
     metrics = get_prometheus_metrics(store)
     if workflow_name:
@@ -401,6 +426,7 @@ def workflow_metrics(workflow_name: str | None = None, period: str | None = None
 def workflow_template_save(name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> dict:
     """Save a workflow as a reusable template."""
     from storage.templates import TemplateRegistry
+
     try:
         path = TemplateRegistry().save(name, yaml_content, description, tags)
         return {"ok": True, "name": name, "path": path}
@@ -411,6 +437,7 @@ def workflow_template_save(name: str, yaml_content: str, description: str = "", 
 def workflow_template_list() -> dict:
     """List all saved templates."""
     from storage.templates import TemplateRegistry
+
     templates = TemplateRegistry().list()
     return {"ok": True, "templates": templates}
 
@@ -418,6 +445,7 @@ def workflow_template_list() -> dict:
 def workflow_template_load(name: str) -> dict:
     """Load a template's YAML content."""
     from storage.templates import TemplateRegistry
+
     content = TemplateRegistry().load(name)
     if content is None:
         return {"ok": False, "error": f"Template '{name}' not found"}
@@ -427,6 +455,7 @@ def workflow_template_load(name: str) -> dict:
 def workflow_template_delete(name: str) -> dict:
     """Delete a saved template."""
     from storage.templates import TemplateRegistry
+
     removed = TemplateRegistry().delete(name)
     if not removed:
         return {"ok": False, "error": f"Template '{name}' not found"}

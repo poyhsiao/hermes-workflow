@@ -32,10 +32,19 @@ class AuditLogWriter:
         import getpass
         import json as _json
         import uuid
+
         with self._lock:
             self.store.db.execute(
                 self._INSERT,
-                (str(uuid.uuid4()), execution_id, step_id, action, actor or getpass.getuser(), _json.dumps(details or {}, default=str), datetime.now(timezone.utc).isoformat()),
+                (
+                    str(uuid.uuid4()),
+                    execution_id,
+                    step_id,
+                    action,
+                    actor or getpass.getuser(),
+                    _json.dumps(details or {}, default=str),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             self.store.db.commit()
 
@@ -74,11 +83,13 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
         wf = _esc(r["workflow_id"] or "")
         status = _esc(r["status"] or "")
         cnt = r["count"]
-        metrics["workflow_executions_total"][f"{{workflow=\"{wf}\",status=\"{status}\"}}"] = cnt
+        metrics["workflow_executions_total"][f'{{workflow="{wf}",status="{status}"}}'] = cnt
         if status == "running":
             active += cnt
         if r["avg_duration"] is not None:
-            metrics["workflow_execution_duration_seconds"][f"{{workflow=\"{wf}\",status=\"{status}\"}}"] = round(r["avg_duration"], 2)
+            metrics["workflow_execution_duration_seconds"][f'{{workflow="{wf}",status="{status}"}}'] = round(
+                r["avg_duration"], 2
+            )
 
     metrics["workflow_active_runs"] = active
 
@@ -91,6 +102,6 @@ def get_prometheus_metrics(store: ExecutionStore) -> dict:
 
     for r in retry_rows:
         wf = _esc(r["workflow_id"] or "unknown")
-        metrics["workflow_retries_total"][f"{{workflow=\"{wf}\"}}"] = r["total_retries"] or 0
+        metrics["workflow_retries_total"][f'{{workflow="{wf}"}}'] = r["total_retries"] or 0
 
     return metrics

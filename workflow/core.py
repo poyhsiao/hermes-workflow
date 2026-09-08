@@ -128,7 +128,9 @@ class Step:
             compensate=CompensateConfig.from_dict(d.get("compensate")),
             agent_profile=agent_data.get("profile"),
             agent_goal=agent_data.get("goal"),
-            branches=[ParallelBranch(name=b["name"], steps=[Step.from_dict(s) for s in b["steps"]]) for b in branches_data],
+            branches=[
+                ParallelBranch(name=b["name"], steps=[Step.from_dict(s) for s in b["steps"]]) for b in branches_data
+            ],
             event_name=d.get("event"),
         )
 
@@ -185,7 +187,15 @@ class WorkflowDefinition:
                     "retry": {"max_attempts": s.retry.max_attempts, "backoff": s.retry.backoff} if s.retry else None,
                     "compensate": {"tool": s.compensate.tool, "args": s.compensate.args} if s.compensate else None,
                     "agent": {"profile": s.agent_profile, "goal": s.agent_goal} if s.agent_profile else None,
-                    "branches": [{"name": b.name, "steps": [{"name": s.name, "type": s.step_type.value, "args": s.args} for s in b.steps]} for b in s.branches] if s.branches else None,
+                    "branches": [
+                        {
+                            "name": b.name,
+                            "steps": [{"name": s.name, "type": s.step_type.value, "args": s.args} for s in b.steps],
+                        }
+                        for b in s.branches
+                    ]
+                    if s.branches
+                    else None,
                     "event": s.event_name,
                 }
                 for s in self.steps
@@ -268,7 +278,13 @@ class WorkflowEngine:
     def update_status(self, status: ExecutionStatus):
         with self._lock:
             self.record.status = status
-            if status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.ROLLED_BACK, ExecutionStatus.TERMINATED):
+            if status in (
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+                ExecutionStatus.ROLLED_BACK,
+                ExecutionStatus.TERMINATED,
+            ):
                 from datetime import datetime, timezone
+
                 self.record.ended_at = datetime.now(timezone.utc).isoformat()
             self.store.save_execution(self.record)

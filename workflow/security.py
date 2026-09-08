@@ -68,26 +68,69 @@ NEED_CONFIRM_PATTERNS = [
 # NOTE: This list is restricted to TRULY READ-ONLY commands. Do NOT add commands
 # that can write, create, modify, move, copy, or delete files/directories.
 # Do NOT add commands that can make network modifications (git push, curl -T, etc.)
-SHELL_SAFE_COMMANDS = frozenset({
-    # File inspection (read-only)
-    "ls", "stat", "file", "cat", "head", "tail", "wc", "sort", "uniq",
-    "grep", "egrep", "fgrep", "cut", "tr",
-    # Hash / integrity (read-only)
-    "md5sum", "sha1sum", "sha256sum", "sha512sum", "cksum",
-    # Date / version
-    "date", "uptime", "hostname", "uname", "arch",
-    # Network (read-only - no file upload/download)
-    "ping", "ping6", "nslookup", "dig", "host",
-    # System (read-only)
-    "df", "du", "free", "top", "ps", "pidof",
-    "id", "whoami", "groups", "env", "printenv",
-    # Git (read-only operations only - see is_command_allowed for full validation)
-    "git",
-    # Misc (no file modification)
-    "echo", "printf", "seq", "false", "true", "which",
-    "basename", "dirname", "readlink", "realpath",
-})
-SHELL_SAFE_WITH_ARGS = {      # commands that are safe only without specific flag combos
+SHELL_SAFE_COMMANDS = frozenset(
+    {
+        # File inspection (read-only)
+        "ls",
+        "stat",
+        "file",
+        "cat",
+        "head",
+        "tail",
+        "wc",
+        "sort",
+        "uniq",
+        "grep",
+        "egrep",
+        "fgrep",
+        "cut",
+        "tr",
+        # Hash / integrity (read-only)
+        "md5sum",
+        "sha1sum",
+        "sha256sum",
+        "sha512sum",
+        "cksum",
+        # Date / version
+        "date",
+        "uptime",
+        "hostname",
+        "uname",
+        "arch",
+        # Network (read-only - no file upload/download)
+        "ping",
+        "ping6",
+        "nslookup",
+        "dig",
+        "host",
+        # System (read-only)
+        "df",
+        "du",
+        "free",
+        "top",
+        "ps",
+        "pidof",
+        "id",
+        "whoami",
+        "groups",
+        "env",
+        "printenv",
+        # Git (read-only operations only - see is_command_allowed for full validation)
+        "git",
+        # Misc (no file modification)
+        "echo",
+        "printf",
+        "seq",
+        "false",
+        "true",
+        "which",
+        "basename",
+        "dirname",
+        "readlink",
+        "realpath",
+    }
+)
+SHELL_SAFE_WITH_ARGS = {  # commands that are safe only without specific flag combos
     "find": frozenset({"xargs"}),  # find ... | xargs <safe> is ok in shell=False context
     "tar": frozenset({"-x", "--extract"}),  # extraction only - no archive creation
 }
@@ -135,6 +178,7 @@ class PermissionScope:
     def is_command_allowed(self, cmd: str) -> bool:
         """Check if cmd is in the safe allowlist for subprocess fallback (shell=False)."""
         import shlex
+
         try:
             parts = shlex.split(cmd)
         except ValueError:
@@ -146,13 +190,32 @@ class PermissionScope:
             return False
         if base == "git" and len(parts) > 1:
             git_subcmd = parts[1]
-            readonly_git_subcommands = frozenset({
-                "log", "show", "diff", "status", "branch", "tag", "reflog",
-                "rev-parse", "ls-files", "ls-tree", "cat-file", "describe",
-                "name-rev", "for-each-ref", "shortlog", "count-objects",
-                "diff-index", "diff-tree", "diff-files", "commit-tree",
-                "verify-pack", "verify-commit", "show-ref", "symbolic-ref",
-            })
+            readonly_git_subcommands = frozenset(
+                {
+                    "log",
+                    "show",
+                    "diff",
+                    "status",
+                    "branch",
+                    "tag",
+                    "reflog",
+                    "rev-parse",
+                    "ls-files",
+                    "ls-tree",
+                    "cat-file",
+                    "describe",
+                    "name-rev",
+                    "for-each-ref",
+                    "shortlog",
+                    "count-objects",
+                    "diff-index",
+                    "diff-tree",
+                    "diff-files",
+                    "verify-pack",
+                    "verify-commit",
+                    "show-ref",
+                }
+            )
             if git_subcmd not in readonly_git_subcommands:
                 return False
         return True
@@ -194,6 +257,14 @@ class AuditLogger:
         with self._lock:
             self.store.db.execute(
                 self._INSERT_SQL,
-                (str(uuid.uuid4()), execution_id, step_id, action, actor or getpass.getuser(), json.dumps(details or {}, default=str), datetime.now(timezone.utc).isoformat()),
+                (
+                    str(uuid.uuid4()),
+                    execution_id,
+                    step_id,
+                    action,
+                    actor or getpass.getuser(),
+                    json.dumps(details or {}, default=str),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             self.store.db.commit()

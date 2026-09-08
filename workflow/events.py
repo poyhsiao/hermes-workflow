@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,8 +56,8 @@ class EventBus:
         for cb in callbacks:
             try:
                 cb(event)
-            except Exception:  # noqa: BLE001,S110
-                pass  # Don't let subscriber errors break the bus
+            except Exception:  # noqa: BLE001
+                _logger.exception("Event subscriber %s raised for event %s", cb, event.event_name)
 
     def emit(self, workflow_id: str, execution_id: str, event_name: str, payload: Any = None) -> None:
         evt = WorkflowEvent(workflow_id=workflow_id, execution_id=execution_id, event_name=event_name, payload=payload)

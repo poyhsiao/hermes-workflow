@@ -1,6 +1,5 @@
 """Tests for workflow engine: YAML parsing, engine execution, rollback."""
 
-
 import pytest
 
 from workflow.context import WorkflowContext
@@ -95,23 +94,27 @@ def test_validate_missing_name():
 
 def test_validate_duplicate_step_name():
     with pytest.raises(ValidationError, match="Duplicate"):
-        validate_workflow({
-            "name": "dup",
-            "steps": [
-                {"name": "a", "type": "tool"},
-                {"name": "a", "type": "tool"},
-            ],
-        })
+        validate_workflow(
+            {
+                "name": "dup",
+                "steps": [
+                    {"name": "a", "type": "tool"},
+                    {"name": "a", "type": "tool"},
+                ],
+            }
+        )
 
 
 def test_validate_unknown_requires():
     with pytest.raises(ValidationError, match="requires unknown"):
-        validate_workflow({
-            "name": "bad-dep",
-            "steps": [
-                {"name": "a", "type": "tool", "requires": ["nonexistent"]},
-            ],
-        })
+        validate_workflow(
+            {
+                "name": "bad-dep",
+                "steps": [
+                    {"name": "a", "type": "tool", "requires": ["nonexistent"]},
+                ],
+            }
+        )
 
 
 def test_workflow_context_shared():
