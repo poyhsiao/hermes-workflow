@@ -94,7 +94,7 @@ def _handle_workflow_command(raw_args: str) -> str | None:
     from triggers.slash_command import WorkflowSlashDispatcher
 
     dispatcher = WorkflowSlashDispatcher(wt)
-    result = dispatcher.dispatch(raw_args)
+    result = dispatcher.dispatch(f"/workflow {raw_args}")
     if result.get("ok"):
         return str(result)
     return f"Error: {result.get('error', 'unknown error')}"
