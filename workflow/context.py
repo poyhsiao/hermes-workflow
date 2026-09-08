@@ -64,7 +64,9 @@ class WorkflowContext:
             self.events = list(checkpoint.get("events", []))
             # Trim checkpoints after the rollback point
             for idx, cp in enumerate(self.checkpoints):
-                if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get("shared"):
+                if cp.get("step_index") == checkpoint.get("step_index") and cp.get("shared") == checkpoint.get(
+                    "shared"
+                ):
                     self.checkpoints = self.checkpoints[: idx + 1]
                     break
 
@@ -134,13 +136,16 @@ class WorkflowContext:
         return resolved
 
     def to_json(self) -> str:
-        return json.dumps({
-            "workflow_id": self.workflow_id,
-            "execution_id": self.execution_id,
-            "shared": self.shared,
-            "pipeline": self.pipeline,
-            "events": self.events,
-        }, default=str)
+        return json.dumps(
+            {
+                "workflow_id": self.workflow_id,
+                "execution_id": self.execution_id,
+                "shared": self.shared,
+                "pipeline": self.pipeline,
+                "events": self.events,
+            },
+            default=str,
+        )
 
     @classmethod
     def from_json(cls, json_str: str) -> WorkflowContext:

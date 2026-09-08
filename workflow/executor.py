@@ -35,7 +35,9 @@ if TYPE_CHECKING:
 # ── Step executors ──────────────────────────────────────────────────────────────
 
 
-def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> Any:
+def execute_tool_step(
+    step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None
+) -> Any:
     """Execute a tool step. Tool name is in step.args['command'] or step.args['tool']."""
     # Resolve {{ var }} in args
     resolved_args = ctx.resolve_args(step.args)
@@ -48,6 +50,7 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
     # Enforce tool allowlist/blocklist from workflow definition
     if permission_scope is None:
         from workflow.security import PermissionScope
+
         permission_scope = PermissionScope()
     if not permission_scope.can_run_tool(tool_name):
         raise PermissionError(f"Step '{step.name}': tool '{tool_name}' is not permitted by workflow permission policy")
@@ -56,11 +59,13 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
     result = None
     try:
         from tools.registry import get_tool
+
         tool_fn = get_tool(tool_name)
         if tool_fn:
             result = tool_fn(**resolved_args)
     except Exception as e:  # noqa: BLE001
         import logging
+
         logging.getLogger(__name__).debug("Tool '%s' not found in registry: %s", tool_name, e)
 
     if result is None:
@@ -75,11 +80,14 @@ def execute_tool_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, perm
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
         # Defense-in-depth: block shell operators (still relevant if shlex parsing fails or is bypassed)
         from workflow.security import SHELL_OPERATOR_BLOCK
+
         if SHELL_OPERATOR_BLOCK.search(cmd):
             raise PermissionError(f"Step '{step.name}': command contains disallowed shell operators")
         # Command allowlist: only safe commands permitted through subprocess fallback
         if not permission_scope.is_command_allowed(cmd):
-            raise PermissionError(f"Step '{step.name}': command '{tool_name}' is not permitted by the command allowlist")
+            raise PermissionError(
+                f"Step '{step.name}': command '{tool_name}' is not permitted by the command allowlist"
+            )
         # shell=False + shlex.split = no shell injection possible
         out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
@@ -98,11 +106,14 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
 
     if plugin_ctx is not None:
         # Use Hermes dispatch_tool for proper tool integration
-        result_str = plugin_ctx.dispatch_tool("delegate_task", {
-            "goal": resolved_goal,
-            "profile": resolved_profile or "default",
-            "context": ctx.shared,
-        })
+        result_str = plugin_ctx.dispatch_tool(
+            "delegate_task",
+            {
+                "goal": resolved_goal,
+                "profile": resolved_profile or "default",
+                "context": ctx.shared,
+            },
+        )
         # dispatch_tool returns a string — parse it
         try:
             result = json.loads(result_str) if result_str else {}
@@ -118,6 +129,7 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
         # Fallback: try direct import (backward compat)
         try:
             from tools.delegate_tool import delegate_task  # type: ignore[assignment]
+
             result = delegate_task(
                 profile=resolved_profile or "default",
                 goal=resolved_goal,
@@ -132,7 +144,13 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
     return result
 
 
-def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> dict:
+def execute_parallel_branch(
+    step: Step,
+    ctx: WorkflowContext,
+    audit: AuditLogger,
+    permission_scope: PermissionScope | None = None,
+    plugin_ctx: Any = None,
+) -> dict:
     """Execute a parallel_branch step: all sub-branches run concurrently."""
     if not step.branches:
         return {}
@@ -157,7 +175,13 @@ def execute_parallel_branch(step: Step, ctx: WorkflowContext, audit: AuditLogger
     return results
 
 
-def _execute_branch(branch: ParallelBranch, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
+def _execute_branch(
+    branch: ParallelBranch,
+    ctx: WorkflowContext,
+    audit: AuditLogger,
+    permission_scope: PermissionScope | None = None,
+    plugin_ctx: Any = None,
+) -> Any:
     results = []
     for s in branch.steps:
         r = _execute_single_step(s, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
@@ -178,13 +202,21 @@ def execute_checkpoint_step(step: Step, ctx: WorkflowContext, audit: AuditLogger
 # ── Single step execution with error handling ───────────────────────────────────
 
 
-def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None) -> Any:
+def _execute_single_step(
+    step: Step,
+    ctx: WorkflowContext,
+    audit: AuditLogger,
+    permission_scope: PermissionScope | None = None,
+    plugin_ctx: Any = None,
+) -> Any:
     """Execute one step with error handling, retry, and checkpoint."""
     event_bus = EventBus.get_instance()
 
     with trace_step(step.name, step.step_type.value, ctx.execution_id):
         # Emit step started
-        event_bus.emit(ctx.workflow_id, ctx.execution_id, STEP_STARTED, {"step": step.name, "type": step.step_type.value})
+        event_bus.emit(
+            ctx.workflow_id, ctx.execution_id, STEP_STARTED, {"step": step.name, "type": step.step_type.value}
+        )
 
         try:
             if step.step_type == StepType.TOOL:
@@ -201,7 +233,9 @@ def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, p
             else:
                 raise ValueError(f"Unknown step type: {step.step_type}")
 
-            event_bus.emit(ctx.workflow_id, ctx.execution_id, STEP_COMPLETED, {"step": step.name, "result": str(result)[:200]})
+            event_bus.emit(
+                ctx.workflow_id, ctx.execution_id, STEP_COMPLETED, {"step": step.name, "result": str(result)[:200]}
+            )
             return result
 
         except Exception as e:
@@ -270,11 +304,15 @@ def execute_steps(
             if elapsed > record.max_duration:
                 record.status = ExecutionStatus.TERMINATED
                 store.save_execution(record)
-                audit.log(record.id, "workflow.max_duration_exceeded", details={"elapsed": elapsed, "limit": record.max_duration})
+                audit.log(
+                    record.id,
+                    "workflow.max_duration_exceeded",
+                    details={"elapsed": elapsed, "limit": record.max_duration},
+                )
                 return ExecutionStatus.TERMINATED
 
         batch = ready if definition.concurrency.value == "parallel" else [ready[0]]
-        ready = ready[len(batch):]
+        ready = ready[len(batch) :]
 
         # Execute batch
         for step in batch:
@@ -283,14 +321,23 @@ def execute_steps(
 
             # Save step record
             step_id = store.save_step(
-                record.id, definition.steps.index(step), step.name, step.step_type.value,
+                record.id,
+                definition.steps.index(step),
+                step.name,
+                step.step_type.value,
                 input_json=json.dumps(step.args, default=str),
             )
 
             # Checkpoint before step (include compensate so saga rollback can access it later)
             _pre_snap = ctx.checkpoint(
                 step_index=definition.steps.index(step),
-                metadata={"step": step.name, "pre": True, "compensate": {"tool": step.compensate.tool, "args": step.compensate.args} if step.compensate else None},
+                metadata={
+                    "step": step.name,
+                    "pre": True,
+                    "compensate": {"tool": step.compensate.tool, "args": step.compensate.args}
+                    if step.compensate
+                    else None,
+                },
             )
 
             # Persist pre-step checkpoint to DB before execution so rollback can retrieve it
@@ -307,7 +354,12 @@ def execute_steps(
 
                 try:
                     result = _execute_single_step(step, ctx, audit, definition.permission_scope, plugin_ctx=plugin_ctx)
-                    store.update_step(step_id, status="completed", output_json=json.dumps(result, default=str), ended_at=datetime.now(timezone.utc).isoformat())
+                    store.update_step(
+                        step_id,
+                        status="completed",
+                        output_json=json.dumps(result, default=str),
+                        ended_at=datetime.now(timezone.utc).isoformat(),
+                    )
                     completed.add(step.name)
                     done = True
                 except Exception as e:  # noqa: BLE001
@@ -317,12 +369,16 @@ def execute_steps(
                         attempt += 1
                         store.update_step(step_id, retry_count=attempt)
                         event_bus = EventBus.get_instance()
-                        event_bus.emit(ctx.workflow_id, ctx.execution_id, STEP_RETRIED, {"step": step.name, "attempt": attempt})
+                        event_bus.emit(
+                            ctx.workflow_id, ctx.execution_id, STEP_RETRIED, {"step": step.name, "attempt": attempt}
+                        )
                         time.sleep(strategy.delay(attempt))
                         continue
 
                     # Non-retry or exhausted
-                    store.update_step(step_id, status="failed", error=str(e), ended_at=datetime.now(timezone.utc).isoformat())
+                    store.update_step(
+                        step_id, status="failed", error=str(e), ended_at=datetime.now(timezone.utc).isoformat()
+                    )
                     failed_step = step.name
 
                     if action == ErrorAction.STOP:
@@ -390,7 +446,13 @@ def execute_steps(
     return record.status
 
 
-def _execute_saga_compensation(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger, permission_scope: PermissionScope | None = None) -> None:
+def _execute_saga_compensation(
+    ctx: WorkflowContext,
+    record: ExecutionRecord,
+    store: ExecutionStore,
+    audit: AuditLogger,
+    permission_scope: PermissionScope | None = None,
+) -> None:
     """Execute compensate functions in reverse order for completed steps (SAGA pattern)."""
     steps = store.get_steps(record.id)
     completed_steps = [s for s in reversed(steps) if s["status"] == "completed" and s.get("checkpoint_json")]
@@ -411,7 +473,13 @@ def _execute_saga_compensation(ctx: WorkflowContext, record: ExecutionRecord, st
                 raise  # Re-raise so rollback failure surfaces to caller
 
 
-def _do_rollback(ctx: WorkflowContext, record: ExecutionRecord, store: ExecutionStore, audit: AuditLogger, permission_scope: PermissionScope | None = None):
+def _do_rollback(
+    ctx: WorkflowContext,
+    record: ExecutionRecord,
+    store: ExecutionStore,
+    audit: AuditLogger,
+    permission_scope: PermissionScope | None = None,
+):
     """Perform rollback to last checkpoint (checkpoint + saga compensate)."""
     if record.rollback_policy == RollbackPolicy.SAGA:
         _execute_saga_compensation(ctx, record, store, audit, permission_scope)

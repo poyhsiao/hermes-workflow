@@ -90,16 +90,24 @@ def _dispatch_workflow(args) -> dict[str, Any]:
 
     if verb == "define":
         name = args.name
-        result = wt.workflow_show(name) if wt.workflow_show(name).get("ok") else {"ok": True, "yaml": f"# New workflow: {name}\n" + ("name: " + name + "\nversion: 1\ndescription: \"\"\nsteps: []\n")}
+        result = (
+            wt.workflow_show(name)
+            if wt.workflow_show(name).get("ok")
+            else {
+                "ok": True,
+                "yaml": f"# New workflow: {name}\n" + ("name: " + name + '\nversion: 1\ndescription: ""\nsteps: []\n'),
+            }
+        )
         # Write to temp file and open editor
         import os
         import tempfile
+
         fd, path = tempfile.mkstemp(suffix=".yaml")
         with os.fdopen(fd, "w") as f:
             f.write(result.get("yaml", ""))
         # Whitelist EDITOR to prevent command injection; falls back to 'vi'
         allowed_editors = {"vi", "vim", "nano", "emacs", "code", "subl"}
-        editor = subprocess.os.environ.get("EDITOR", "vi")
+        editor = os.environ.get("EDITOR", "vi")
         if editor not in allowed_editors:
             editor = "vi"
         subprocess.run([editor, path], check=True)  # noqa: S603
@@ -162,10 +170,13 @@ def print_result(result: dict):
             for s in result["suggestions"]:
                 print(f"  → {s['suggest']}  {s['reason']}")
         elif "diff" in result:
-            print(f"# {result['name']}: v{result['v1']} → v{result['v2']} (steps: {result['steps_v1']} → {result['steps_v2']})")
+            print(
+                f"# {result['name']}: v{result['v1']} → v{result['v2']} (steps: {result['steps_v1']} → {result['steps_v2']})"
+            )
             print(result["diff"])
         elif "metrics" in result:
             import json as _json
+
             print(_json.dumps(result["metrics"], indent=2, default=str))
         else:
             print(json.dumps(result, indent=2, default=str))

@@ -130,14 +130,26 @@ class ExecutionStore:
         now = datetime.now(timezone.utc).isoformat()
         self.db.execute(
             "INSERT INTO workflow_definitions (id, name, version, definition_yaml, created_at, updated_at, created_by, tags, is_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (wf_id, defn.name, defn.version, defn.definition_yaml, now, now, created_by, json.dumps(defn.to_dict().get("tags", [])), 0),
+            (
+                wf_id,
+                defn.name,
+                defn.version,
+                defn.definition_yaml,
+                now,
+                now,
+                created_by,
+                json.dumps(defn.to_dict().get("tags", [])),
+                0,
+            ),
         )
         # Also save first version
         self._save_version(wf_id, defn.version, defn.definition_yaml, created_by, "initial version")
         self.db.commit()
         return wf_id
 
-    def update_definition(self, wf_id: str, defn: WorkflowDefinition, changed_by: str | None = None, change_summary: str = "") -> None:
+    def update_definition(
+        self, wf_id: str, defn: WorkflowDefinition, changed_by: str | None = None, change_summary: str = ""
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         new_version = defn.version + 1
         self.db.execute(
@@ -148,10 +160,13 @@ class ExecutionStore:
         self.db.commit()
 
     def get_definition(self, name: str) -> WorkflowDefinition | None:
-        row = self.db.execute("SELECT * FROM workflow_definitions WHERE name=? ORDER BY version DESC LIMIT 1", (name,)).fetchone()
+        row = self.db.execute(
+            "SELECT * FROM workflow_definitions WHERE name=? ORDER BY version DESC LIMIT 1", (name,)
+        ).fetchone()
         if not row:
             return None
         from workflow.definitions import parse_workflow_yaml
+
         return parse_workflow_yaml(row["definition_yaml"])
 
     def get_definition_by_id(self, wf_id: str) -> WorkflowDefinition | None:
@@ -159,6 +174,7 @@ class ExecutionStore:
         if not row:
             return None
         from workflow.definitions import parse_workflow_yaml
+
         return parse_workflow_yaml(row["definition_yaml"])
 
     def list_definitions(self, include_templates: bool = False) -> list[dict]:
@@ -173,6 +189,7 @@ class ExecutionStore:
             d = dict(r)
             # Extract description from YAML
             import yaml
+
             try:
                 parsed = yaml.safe_load(d.get("definition_yaml") or "")
                 d["description"] = (parsed or {}).get("description", "")
@@ -190,18 +207,32 @@ class ExecutionStore:
     def _save_version(self, workflow_id: str, version: int, yaml: str, changed_by: str | None, summary: str):
         self.db.execute(
             "INSERT OR REPLACE INTO workflow_versions (id, workflow_id, version, definition_yaml, changed_at, changed_by, change_summary) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), workflow_id, version, yaml, datetime.now(timezone.utc).isoformat(), changed_by, summary),
+            (
+                str(uuid.uuid4()),
+                workflow_id,
+                version,
+                yaml,
+                datetime.now(timezone.utc).isoformat(),
+                changed_by,
+                summary,
+            ),
         )
 
     def get_version(self, workflow_id: str, version: int) -> WorkflowDefinition | None:
-        row = self.db.execute("SELECT * FROM workflow_versions WHERE workflow_id=? AND version=?", (workflow_id, version)).fetchone()
+        row = self.db.execute(
+            "SELECT * FROM workflow_versions WHERE workflow_id=? AND version=?", (workflow_id, version)
+        ).fetchone()
         if not row:
             return None
         from workflow.definitions import parse_workflow_yaml
+
         return parse_workflow_yaml(row["definition_yaml"])
 
     def list_versions(self, workflow_id: str) -> list[dict]:
-        rows = self.db.execute("SELECT version, changed_at, changed_by, change_summary FROM workflow_versions WHERE workflow_id=? ORDER BY version DESC", (workflow_id,)).fetchall()
+        rows = self.db.execute(
+            "SELECT version, changed_at, changed_by, change_summary FROM workflow_versions WHERE workflow_id=? ORDER BY version DESC",
+            (workflow_id,),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     # ── Execution CRUD ────────────────────────────────────────────────────────
@@ -209,7 +240,20 @@ class ExecutionStore:
     def create_execution(self, record: ExecutionRecord, context_json: str = "{}") -> str:
         self.db.execute(
             "INSERT INTO workflow_executions (id, workflow_id, version, status, context_json, concurrency_mode, max_duration, error_policy, rollback_policy, started_at, triggered_by, triggered_by_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (record.id, record.workflow_id, record.version, record.status.value, context_json, record.concurrency_mode.value, record.max_duration, record.error_policy.value, record.rollback_policy.value, record.started_at, record.triggered_by, record.triggered_by_user),
+            (
+                record.id,
+                record.workflow_id,
+                record.version,
+                record.status.value,
+                context_json,
+                record.concurrency_mode.value,
+                record.max_duration,
+                record.error_policy.value,
+                record.rollback_policy.value,
+                record.started_at,
+                record.triggered_by,
+                record.triggered_by_user,
+            ),
         )
         self.db.commit()
         return record.id
@@ -260,16 +304,50 @@ class ExecutionStore:
 
     # ── Step CRUD ─────────────────────────────────────────────────────────────
 
-    def save_step(self, exec_id: str, step_index: int, step_name: str, step_type: str, input_json: str = "{}", output_json: str = "", status: str = "pending", error: str = "", retry_count: int = 0, checkpoint_json: str = "") -> str:
+    def save_step(
+        self,
+        exec_id: str,
+        step_index: int,
+        step_name: str,
+        step_type: str,
+        input_json: str = "{}",
+        output_json: str = "",
+        status: str = "pending",
+        error: str = "",
+        retry_count: int = 0,
+        checkpoint_json: str = "",
+    ) -> str:
         step_id = str(uuid.uuid4())
         self.db.execute(
             "INSERT INTO execution_steps (id, execution_id, step_index, step_name, step_type, input_json, output_json, status, error, retry_count, checkpoint_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (step_id, exec_id, step_index, step_name, step_type, input_json, output_json, status, error, retry_count, checkpoint_json),
+            (
+                step_id,
+                exec_id,
+                step_index,
+                step_name,
+                step_type,
+                input_json,
+                output_json,
+                status,
+                error,
+                retry_count,
+                checkpoint_json,
+            ),
         )
         self.db.commit()
         return step_id
 
-    def update_step(self, step_id: str, status: str | None = None, output_json: str | None = None, error: str | None = None, retry_count: int | None = None, checkpoint_json: str | None = None, started_at: str | None = None, ended_at: str | None = None) -> None:
+    def update_step(
+        self,
+        step_id: str,
+        status: str | None = None,
+        output_json: str | None = None,
+        error: str | None = None,
+        retry_count: int | None = None,
+        checkpoint_json: str | None = None,
+        started_at: str | None = None,
+        ended_at: str | None = None,
+    ) -> None:
         # Build SET clause from known column names only (hardcoded, no user input)
         set_clauses: list[str] = []
         params: list = []
@@ -302,11 +380,14 @@ class ExecutionStore:
         self.db.commit()
 
     def get_steps(self, exec_id: str) -> list[dict]:
-        rows = self.db.execute("SELECT * FROM execution_steps WHERE execution_id=? ORDER BY step_index", (exec_id,)).fetchall()
+        rows = self.db.execute(
+            "SELECT * FROM execution_steps WHERE execution_id=? ORDER BY step_index", (exec_id,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def save_checkpoint(self, exec_id: str, step_index: int, checkpoint_data: dict) -> None:
         import json
+
         self.db.execute(
             "UPDATE execution_steps SET checkpoint_json=? WHERE execution_id=? AND step_index=?",
             (json.dumps(checkpoint_data, default=str), exec_id, step_index),
@@ -315,17 +396,36 @@ class ExecutionStore:
 
     def get_last_checkpoint(self, exec_id: str) -> dict | None:
         import json
-        row = self.db.execute("SELECT checkpoint_json FROM execution_steps WHERE execution_id=? AND checkpoint_json IS NOT NULL AND checkpoint_json != '' ORDER BY step_index DESC LIMIT 1", (exec_id,)).fetchone()
+
+        row = self.db.execute(
+            "SELECT checkpoint_json FROM execution_steps WHERE execution_id=? AND checkpoint_json IS NOT NULL AND checkpoint_json != '' ORDER BY step_index DESC LIMIT 1",
+            (exec_id,),
+        ).fetchone()
         if row and row["checkpoint_json"]:
             return json.loads(row["checkpoint_json"])
         return None
 
     # ── Audit ─────────────────────────────────────────────────────────────────
 
-    def log_audit(self, exec_id: str, action: str, step_id: str | None = None, actor: str | None = None, details: dict | None = None) -> None:
+    def log_audit(
+        self,
+        exec_id: str,
+        action: str,
+        step_id: str | None = None,
+        actor: str | None = None,
+        details: dict | None = None,
+    ) -> None:
         self.db.execute(
             "INSERT INTO audit_log (id, execution_id, step_id, action, actor, details_json, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), exec_id, step_id, action, actor or getpass.getuser(), json.dumps(details or {}, default=str), datetime.now(timezone.utc).isoformat()),
+            (
+                str(uuid.uuid4()),
+                exec_id,
+                step_id,
+                action,
+                actor or getpass.getuser(),
+                json.dumps(details or {}, default=str),
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         self.db.commit()
 

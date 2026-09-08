@@ -61,17 +61,21 @@ class TestValidateParallelBranch:
 
     def test_parallel_branch_branch_missing_name_rejects(self):
         with pytest.raises(ValidationError, match="branch missing 'name'"):
-            validate_workflow({
-                **VALID_MINIMAL,
-                "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"steps": []}]}],
-            })
+            validate_workflow(
+                {
+                    **VALID_MINIMAL,
+                    "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"steps": []}]}],
+                }
+            )
 
     def test_parallel_branch_branch_missing_steps_rejects(self):
         with pytest.raises(ValidationError, match="branch missing 'name'"):
-            validate_workflow({
-                **VALID_MINIMAL,
-                "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"name": "b1"}]}],
-            })
+            validate_workflow(
+                {
+                    **VALID_MINIMAL,
+                    "steps": [{"name": "pb1", "type": "parallel_branch", "branches": [{"name": "b1"}]}],
+                }
+            )
 
 
 class TestValidateAgent:
@@ -80,16 +84,20 @@ class TestValidateAgent:
             validate_workflow({**VALID_MINIMAL, "steps": [{"name": "a1", "type": "agent", "agent": {}}]})
 
     def test_agent_with_profile_valid(self):
-        validate_workflow({
-            **VALID_MINIMAL,
-            "steps": [{"name": "a1", "type": "agent", "agent": {"profile": "coder"}}],
-        })
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "a1", "type": "agent", "agent": {"profile": "coder"}}],
+            }
+        )
 
     def test_agent_with_goal_valid(self):
-        validate_workflow({
-            **VALID_MINIMAL,
-            "steps": [{"name": "a1", "type": "agent", "agent": {"goal": "fix the bug"}}],
-        })
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "a1", "type": "agent", "agent": {"goal": "fix the bug"}}],
+            }
+        )
 
 
 class TestValidateCompensate:
@@ -110,7 +118,12 @@ class TestValidateCompensate:
             validate_workflow({**VALID_MINIMAL, "steps": [{"name": "s1", "compensate": {"tool": "undo"}}]})
 
     def test_compensate_valid(self):
-        validate_workflow({**VALID_MINIMAL, "steps": [{"name": "s1", "compensate": {"tool": "undo", "args": {"undo_action": "delete"}}}]})
+        validate_workflow(
+            {
+                **VALID_MINIMAL,
+                "steps": [{"name": "s1", "compensate": {"tool": "undo", "args": {"undo_action": "delete"}}}],
+            }
+        )
 
 
 class TestValidateRetry:

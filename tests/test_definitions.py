@@ -26,8 +26,9 @@ def store():
 
 
 def test_save_and_get_definition(store):
-    yaml_str = 'name: test\nversion: 1\nsteps: []\n'
+    yaml_str = "name: test\nversion: 1\nsteps: []\n"
     from workflow.definitions import parse_workflow_yaml
+
     defn = parse_workflow_yaml(yaml_str)
     wf_id = store.save_definition(defn, created_by="testuser")
     assert wf_id
@@ -38,8 +39,9 @@ def test_save_and_get_definition(store):
 
 
 def test_list_definitions(store):
-    yaml_str = 'name: list-test\nversion: 1\nsteps: []\n'
+    yaml_str = "name: list-test\nversion: 1\nsteps: []\n"
     from workflow.definitions import parse_workflow_yaml
+
     store.save_definition(parse_workflow_yaml(yaml_str))
     defs = store.list_definitions()
     assert any(d["name"] == "list-test" for d in defs)
@@ -116,8 +118,9 @@ def test_audit_log(store):
 
 
 def test_versioning(store):
-    yaml_str = 'name: ver-test\nversion: 1\nsteps: []\n'
+    yaml_str = "name: ver-test\nversion: 1\nsteps: []\n"
     from workflow.definitions import parse_workflow_yaml
+
     defn = parse_workflow_yaml(yaml_str)
     wf_id = store.save_definition(defn)
 

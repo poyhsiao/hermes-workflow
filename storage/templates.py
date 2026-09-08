@@ -1,4 +1,5 @@
 """Template registry: save, list, load community-curated workflow templates."""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,7 @@ class TemplateRegistry:
     """Manages workflow templates stored on disk."""
 
     def __init__(self, template_dir: Path | None = None):
-        self.template_dir = (template_dir or DEFAULT_TEMPLATE_DIR)
+        self.template_dir = template_dir or DEFAULT_TEMPLATE_DIR
         self.template_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> str:

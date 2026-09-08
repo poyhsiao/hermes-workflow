@@ -21,7 +21,19 @@ class TestPrometheusLabelEscaping:
     def _insert_execution(self, store, exec_id, workflow_id, status):
         store.db.execute(
             "INSERT INTO workflow_executions (id, workflow_id, version, status, context_json, concurrency_mode, error_policy, rollback_policy, started_at, triggered_by, triggered_by_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (exec_id, workflow_id, 1, status, "{}", "sequential", "fail_fast", "none", "2024-01-01T00:00:00", "test", "test"),
+            (
+                exec_id,
+                workflow_id,
+                1,
+                status,
+                "{}",
+                "sequential",
+                "fail_fast",
+                "none",
+                "2024-01-01T00:00:00",
+                "test",
+                "test",
+            ),
         )
         store.db.commit()
 

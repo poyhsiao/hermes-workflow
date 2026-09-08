@@ -95,6 +95,7 @@ def make_execution_record(workflow_id: str, store: ExecutionStore) -> ExecutionR
 
 # ── Sequential execution ─────────────────────────────────────────────────────────
 
+
 class TestSequentialExecution:
     def test_execute_single_step_workflow_completes(self):
         store = make_store()
@@ -163,6 +164,7 @@ steps:
 
 # ── Parallel execution ──────────────────────────────────────────────────────────
 
+
 class TestParallelExecution:
     def test_execute_parallel_workflow_completes(self):
         store = make_store()
@@ -202,6 +204,7 @@ class TestParallelExecution:
 
 
 # ── Error policies ──────────────────────────────────────────────────────────────
+
 
 class TestErrorPolicies:
     def test_fail_fast_stops_on_error(self):
@@ -266,6 +269,7 @@ steps:
 
 # ── Rollback ────────────────────────────────────────────────────────────────────
 
+
 class TestRollback:
     def test_checkpoint_saved_for_each_step(self):
         store = make_store()
@@ -314,6 +318,7 @@ steps:
 
 # ── Permission scope ────────────────────────────────────────────────────────────
 
+
 class TestPermissionScopeIntegration:
     def test_workflow_blocked_tool_fails(self):
         yaml = """
@@ -359,7 +364,6 @@ steps:
 
         result = execute_steps(defn, ctx, record, store, audit)
         assert result == ExecutionStatus.COMPLETED
-
 
     def test_rollback_stops_subsequent_steps(self):
         """ROLLBACK on a step must NOT execute further steps in the workflow."""

@@ -12,7 +12,7 @@ SCHEMAS: dict[str, dict] = {
                     "name": {"type": "string", "description": "Name of the workflow definition to execute."},
                     "context_overrides": {
                         "type": "object",
-                        "description": "Override values for the workflow's context schema (e.g. {\"pr_number\": \"123\"}).",
+                        "description": 'Override values for the workflow\'s context schema (e.g. {"pr_number": "123"}).',
                     },
                 },
                 "required": ["name"],
@@ -121,7 +121,10 @@ SCHEMAS: dict[str, dict] = {
                 "type": "object",
                 "properties": {
                     "execution_id": {"type": "string", "description": "The execution ID to rollback."},
-                    "to_version": {"type": "integer", "description": "Optional: rollback to a specific workflow definition version and re-run from there."},
+                    "to_version": {
+                        "type": "integer",
+                        "description": "Optional: rollback to a specific workflow definition version and re-run from there.",
+                    },
                 },
                 "required": ["execution_id"],
             },
@@ -136,7 +139,11 @@ SCHEMAS: dict[str, dict] = {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Name of the workflow to export."},
-                    "format": {"type": "string", "enum": ["yaml", "json"], "description": "Export format (default: yaml)."},
+                    "format": {
+                        "type": "string",
+                        "enum": ["yaml", "json"],
+                        "description": "Export format (default: yaml).",
+                    },
                 },
                 "required": ["name"],
             },

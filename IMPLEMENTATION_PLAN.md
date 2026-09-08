@@ -95,6 +95,7 @@ class Step:
     retry: dict = None
     compensate: dict = None
 
+
 @dataclass
 class WorkflowDefinition:
     name: str
@@ -106,6 +107,7 @@ class WorkflowDefinition:
     rollback_policy: str = "checkpoint"
     context: dict = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
+
 
 class WorkflowEngine:
     def __init__(self, definition: WorkflowDefinition, context: WorkflowContext, store: ExecutionStore):
@@ -196,11 +198,20 @@ class ErrorStrategy(ABC):
     @abstractmethod
     def handle(self, step: Step, error: Exception, ctx: WorkflowContext, store: ExecutionStore) -> ErrorAction: ...
 
+
 class FailFast(ErrorStrategy): ...
+
+
 class Retry(ErrorStrategy):
     def __init__(self, max_attempts: int, backoff: str): ...
+
+
 class Degrade(ErrorStrategy): ...
+
+
 class Manual(ErrorStrategy): ...
+
+
 class SagaCompensate(ErrorStrategy): ...
 ```
 
@@ -208,11 +219,11 @@ class SagaCompensate(ErrorStrategy): ...
 ```python
 class WorkflowContext:
     def checkpoint(self, step_index: int, store: ExecutionStore):
-        store.save_checkpoint(self.execution_id, step_index, {
-            "shared": copy.deepcopy(self.shared),
-            "pipeline": list(self.pipeline),
-            "step_index": step_index
-        })
+        store.save_checkpoint(
+            self.execution_id,
+            step_index,
+            {"shared": copy.deepcopy(self.shared), "pipeline": list(self.pipeline), "step_index": step_index},
+        )
 
     def rollback_to(self, checkpoint: dict, store: ExecutionStore):
         self.shared = checkpoint["shared"]

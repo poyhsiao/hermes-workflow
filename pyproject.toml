@@ -7,3 +7,16 @@ ignore = ["N999", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+bdd_features_base_dir = "tests/features"
+
+[tool.coverage.run]
+source = ["workflow", "storage", "tools", "triggers", "cli", "observability"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true

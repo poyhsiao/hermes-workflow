@@ -8,6 +8,8 @@ Plugin entry point — registers hooks, tools, and CLI commands.
 
 from __future__ import annotations
 
+from typing import Callable
+
 __version__ = "1.1.0"
 __plugin_name__ = "hermes-dynamic-workflow"
 
@@ -27,7 +29,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     wt._set_plugin_ctx(ctx)
 
     # Tool name → handler function mapping
-    tool_handlers: dict[str, callable] = {
+    tool_handlers: dict[str, Callable] = {
         "workflow_run": wt.workflow_run,
         "workflow_stop": wt.workflow_stop,
         "workflow_status": wt.workflow_status,
@@ -82,6 +84,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
     # Ensure DB is initialized
     from storage.sqlite_store import ExecutionStore
+
     ExecutionStore()
 
 
@@ -103,7 +106,8 @@ def _handle_workflow_command(raw_args: str) -> str | None:
 def _handle_cli_workflow(args) -> None:
     """Handle `hermes workflow <verb>` terminal command (argparse Namespace)."""
     import cli.workflow_commands as wc
-    result = wc.dispatch_workflow(args)
+
+    result = wc._dispatch_workflow(args)
     wc.print_result(result)
 
 
@@ -125,6 +129,7 @@ def _pre_llm_hook(
         return None
 
     import triggers.intent_detector as idet
+
     suggestions = idet.detect_workflow_intent(messages)
     if not suggestions:
         return None
@@ -142,7 +147,7 @@ def _pre_gateway_hook(event, gateway, session_store, **kwargs) -> dict | None:
     if not text.startswith("/workflow"):
         return None
 
-    args = text[len("/workflow "):] if text.startswith("/workflow ") else ""
+    args = text[len("/workflow ") :] if text.startswith("/workflow ") else ""
     result = _handle_workflow_command(args)
     # Respond via gateway
     try:
