@@ -244,7 +244,7 @@ class ExecutionStore:
     def list_executions(self, workflow_id: str | None = None, status: str | None = None, limit: int = 50) -> list[dict]:
         query = "SELECT * FROM workflow_executions"
         conditions = []
-        params = []
+        params: list[str | int] = []
         if workflow_id:
             conditions.append("workflow_id=?")
             params.append(workflow_id)
