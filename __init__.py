@@ -100,8 +100,9 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
 def _handle_workflow_command(raw_args: str) -> str | None:
     """Handle /workflow <verb> [args] from any session (CLI or gateway)."""
-    from .tools import workflow_tools as wt
     from triggers.slash_command import WorkflowSlashDispatcher
+
+    from .tools import workflow_tools as wt
 
     dispatcher = WorkflowSlashDispatcher(wt)
     result = dispatcher.dispatch(f"/workflow {raw_args}".rstrip())

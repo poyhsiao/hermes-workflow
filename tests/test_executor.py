@@ -15,7 +15,7 @@ from workflow.core import (
     RollbackPolicy,
 )
 from workflow.definitions import parse_workflow_yaml
-from workflow.executor import execute_steps, execute_agent_step
+from workflow.executor import execute_agent_step, execute_steps
 from workflow.security import AuditLogger
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
@@ -453,7 +453,7 @@ steps:
 
         # Should NOT raise "no result and no fallback available"
         # Instead, falls back to subprocess with tool_name as command
-        result = execute_steps(defn, ctx, record, store, audit)
+        _ = execute_steps(defn, ctx, record, store, audit)
         # subprocess will fail because 'nonexistent_tool_xyz' isn't a real command,
         # but it should reach subprocess, not fail earlier with "no fallback available"
         steps = store.db.execute(
