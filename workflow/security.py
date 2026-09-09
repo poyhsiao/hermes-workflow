@@ -18,41 +18,38 @@ if TYPE_CHECKING:
 # (e.g. shlex.split("find / -delete") → ["find", "/", "-delete"], which is safe
 # via shell=False but the user intent is still destructive)
 # Matches shell operators anywhere in a command string.
-# Defense-in-depth: catches operators at command start (including after newlines
-# or whitespace prefixes) and anywhere else a string-based shell eval could be
-# triggered. shlex + shell=False mitigates actual injection, but this blocks
-# operators that would be dangerous if shlex is bypassed or if the string
-# is later evaluated in a shell context.
-SHELL_OPERATOR_BLOCK = re.compile(
-    r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<|^\s*\$\(|^\s*[`]"
-)
-# ponytail: original pattern without ^ anchors was correct; added ^\s* prefix
-# variants for completeness (non-breaking — unanchored alternates still cover
-# mid-string operators like "curl http://x.com?a=1;b=2").
+# Defense-in-depth: blocks operators that would be dangerous if shlex is bypassed
+# or if the string is later evaluated in a shell context.
+# Note: ^ in the original pattern was a literal caret (re.search() does not anchor
+# to string start), so ^\s*\$\( and ^\s*[\`] never matched. Removed for clarity.
+SHELL_OPERATOR_BLOCK = re.compile(r"\$\(|[`]|;|&&|\|\||>>|<<|<>|>|<")
 
 # ── Destructive operation patterns ──────────────────────────────────────────────
+# ponytail: removed ^ from all patterns — re.search() finds matches anywhere in string,
+# so ^ was only a literal caret (not a start-of-string anchor). Commands wrapped in
+# echo/pipes/subroups are now correctly caught (e.g. "echo rm -rf /" or "(rm -rf /)").
 DESTRUCTIVE_PATTERNS = [
-    re.compile(r"^\s*rm\s+-[rfR]+\s+"),
-    re.compile(r"^\s*rmdir\s+"),
-    re.compile(r"^\s*drop\s+table\s+", re.IGNORECASE),
-    re.compile(r"^\s*truncate\s+", re.IGNORECASE),
-    re.compile(r"^\s*kubectl\s+delete\s+", re.IGNORECASE),
-    re.compile(r"^\s*docker\s+rm\s+", re.IGNORECASE),
-    re.compile(r"^\s*kill\s+"),
-    re.compile(r"^\s*sudo\s+"),
-    re.compile(r"^\s*git\s+push\s+.*--force", re.IGNORECASE),
+    re.compile(r"\brm\b.*-[rfR]+"),  # rm -rf / rm -R (any position, \b prevents "arm_config")
+    re.compile(r"\brmdir\b"),
+    re.compile(r"\bdrop\s+table\b", re.IGNORECASE),
+    re.compile(r"\btruncate\b", re.IGNORECASE),
+    re.compile(r"\bkubectl\s+delete\b", re.IGNORECASE),
+    re.compile(r"\bdocker\s+rm\b", re.IGNORECASE),
+    re.compile(r"\bkill\b"),
+    re.compile(r"\bsudo\b"),
+    re.compile(r"\bgit\s+push\b.*--force", re.IGNORECASE),
     re.compile(r"--force"),  # catches --force anywhere: kubectl apply --force, docker run --force, etc.
     # find with destructive actions — caught regardless of shell=False
-    re.compile(r"^\s*find\s+.*-(delete|exec|ok|exec_dir)\b"),
+    re.compile(r"\bfind\b.*-(delete|exec|ok|exec_dir)\b"),
     # curl/wget piping to shell — remote code execution vector
-    re.compile(r"^\s*(curl|wget).*\|\s*(bash|sh|perl|python|ruby)"),
+    re.compile(r"\b(curl|wget)\b.*\|\s*(bash|sh|perl|python|ruby)"),
     # disk wipe / device overwrite
-    re.compile(r"^\s*dd\s+.*of=(/dev/[a-zA-Z]+\d*|/dev/mapper/)"),
-    re.compile(r"^\s*mkfs"),
-    re.compile(r"^\s*sfdisk"),
-    re.compile(r"^\s*fdisk\s+.*-w\s*[^d]"),  # fdisk -w (destroy mode)
-    # fork bomb — :(){|:&};: pattern
-    re.compile(r"^\s*:\(\)\s*\{\s*\|"),
+    re.compile(r"\bdd\b.*of=(/dev/[a-zA-Z]+\d*|/dev/mapper/)"),
+    re.compile(r"\bmkfs\b"),
+    re.compile(r"\bsfdisk\b"),
+    re.compile(r"\bfdisk\b.*-w\s*[^d]"),  # fdisk -w (destroy mode)
+    # fork bomb — :(){|:&};: pattern (unanchored — matches anywhere in string)
+    re.compile(r":\(\)\s*\{\s*\|"),
 ]
 
 NEED_CONFIRM_PATTERNS = [
@@ -231,6 +228,8 @@ class PermissionScope:
         return cls(
             allowed_tools=perm.get("allowed_tools"),
             blocked_tools=perm.get("blocked_tools"),
+            max_duration=perm.get("max_duration", 0),
+            max_parallel_branches=perm.get("max_parallel_branches", 4),
         )
 
 

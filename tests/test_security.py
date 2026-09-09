@@ -118,6 +118,19 @@ class TestPermissionScopeIsDestructive:
         scope = PermissionScope()
         assert scope.is_destructive("rmdir /tmp/dir")
 
+    def test_fork_bomb_detected_anywhere(self):
+        # Fork bomb pattern :(){|:&};: must be caught anywhere in string
+        # (unanchored — malicious content can appear after echo, sh -c, etc.)
+        scope = PermissionScope()
+        # At string start
+        assert scope.is_destructive(":(){ | :&};:")
+        # Embedded in command string
+        assert scope.is_destructive("echo ':(){|:&};:'")
+        assert scope.is_destructive("sh -c ':(){|:&};:'")
+        assert scope.is_destructive("echo hello; :(){ | :&};:")
+        # Should not false-positive on arm_config or similar
+        assert not scope.is_destructive("arm_config.yml")
+
 
 class TestNeedsConfirmation:
     def test_git_force_push_needs_confirm(self):
@@ -159,6 +172,18 @@ class TestPermissionScopeFromDefinition:
         scope = PermissionScope.from_workflow_definition(perm)
         assert scope.allowed_tools == {"a", "b"}
         assert scope.blocked_tools == {"c"}
+
+    def test_permission_max_duration_parsed(self):
+        """max_duration from workflow perm dict must be passed to PermissionScope."""
+        perm = {"allowed_tools": ["a"], "max_duration": 3600}
+        scope = PermissionScope.from_workflow_definition(perm)
+        assert scope.max_duration == 3600
+
+    def test_permission_max_parallel_branches_parsed(self):
+        """max_parallel_branches from workflow perm dict must be passed to PermissionScope."""
+        perm = {"blocked_tools": ["b"], "max_parallel_branches": 8}
+        scope = PermissionScope.from_workflow_definition(perm)
+        assert scope.max_parallel_branches == 8
 
     def test_permission_empty_dict(self):
         scope = PermissionScope.from_workflow_definition({})

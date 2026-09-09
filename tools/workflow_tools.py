@@ -177,10 +177,16 @@ def workflow_define(name: str, yaml: str, created_by: str | None = None) -> dict
     vs = VersionedStore(store)
     wf_id = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
     if wf_id:
-        vs.save(defn, created_by, "updated via workflow_define")
+        try:
+            vs.save(defn, created_by, "updated via workflow_define")
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"Failed to update workflow: {e}"}
         return {"ok": True, "name": name, "version": defn.version + 1, "updated": True}
     else:
-        new_id = store.save_definition(defn, created_by)
+        try:
+            new_id = store.save_definition(defn, created_by)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"Failed to save workflow: {e}"}
         return {"ok": True, "name": name, "version": defn.version, "id": new_id, "created": True}
 
 
@@ -190,7 +196,10 @@ def workflow_delete(name: str) -> dict:
     row = store.db.execute("SELECT id FROM workflow_definitions WHERE name=?", (name,)).fetchone()
     if not row:
         return {"ok": False, "error": f"Workflow '{name}' not found"}
-    store.delete_definition(row["id"])
+    try:
+        store.delete_definition(row["id"])
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Failed to delete workflow: {e}"}
     return {"ok": True, "deleted": name}
 
 
@@ -296,56 +305,59 @@ def workflow_rollback(
     else:
         ctx = WfCtx(workflow_id=record.workflow_id, execution_id=new_exec_id)
 
-    store.create_execution(new_record, ctx.to_json())
+    try:
+        store.create_execution(new_record, ctx.to_json())
 
-    audit = AuditLogger(store)
-    audit.log(
-        new_exec_id,
-        "workflow.rollback",
-        details={
-            "from_execution": execution_id,
+        audit = AuditLogger(store)
+        audit.log(
+            new_exec_id,
+            "workflow.rollback",
+            details={
+                "from_execution": execution_id,
+                "checkpoint_restored": checkpoint is not None,
+                "version": to_version,
+            },
+        )
+
+        engine = WorkflowEngine(defn, ctx, new_record, store)
+        with _engines_lock:
+            _engines[new_exec_id] = engine
+
+        def _run():
+            try:
+                # ponytail: resume from checkpoint step_index (skip already-completed steps)
+                from workflow.executor import execute_steps
+
+                step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
+                ctx.checkpoints.clear()  # fresh checkpoint chain for this run
+                execute_steps(
+                    defn,
+                    ctx,
+                    new_record,
+                    store,
+                    audit,
+                    stop_event=engine._stop_event,
+                    resume_from_step=step_offset,
+                    plugin_ctx=_plugin_ctx,
+                )
+            finally:
+                with _engines_lock:
+                    _engines.pop(new_exec_id, None)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+        return {
+            "ok": True,
+            "execution_id": new_exec_id,
+            "status": ExecutionStatus.RUNNING.value,
+            "name": record.workflow_id,
+            "restored_from": execution_id,
+            "version": defn.version,
             "checkpoint_restored": checkpoint is not None,
-            "version": to_version,
-        },
-    )
-
-    engine = WorkflowEngine(defn, ctx, new_record, store)
-    with _engines_lock:
-        _engines[new_exec_id] = engine
-
-    def _run():
-        try:
-            # ponytail: resume from checkpoint step_index (skip already-completed steps)
-            from workflow.executor import execute_steps
-
-            step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
-            ctx.checkpoints.clear()  # fresh checkpoint chain for this run
-            execute_steps(
-                defn,
-                ctx,
-                new_record,
-                store,
-                audit,
-                stop_event=engine._stop_event,
-                resume_from_step=step_offset,
-                plugin_ctx=_plugin_ctx,
-            )
-        finally:
-            with _engines_lock:
-                _engines.pop(new_exec_id, None)
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-
-    return {
-        "ok": True,
-        "execution_id": new_exec_id,
-        "status": ExecutionStatus.RUNNING.value,
-        "name": record.workflow_id,
-        "restored_from": execution_id,
-        "version": defn.version,
-        "checkpoint_restored": checkpoint is not None,
-    }
+        }
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Rollback execution failed: {e}"}
 
 
 def workflow_diff(name: str, v1: int, v2: int) -> dict:
@@ -374,7 +386,10 @@ def workflow_import(yaml: str, as_template: bool = False) -> dict:
         return {"ok": False, "error": f"Invalid YAML: {e}"}
     store = _get_store()
     vs = VersionedStore(store)
-    vs.save(defn)
+    try:
+        vs.save(defn)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Failed to import workflow: {e}"}
     return {"ok": True, "name": defn.name, "version": defn.version, "imported": True}
 
 
@@ -438,7 +453,10 @@ def workflow_template_list() -> dict:
     """List all saved templates."""
     from storage.templates import TemplateRegistry
 
-    templates = TemplateRegistry().list()
+    try:
+        templates = TemplateRegistry().list()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Failed to list templates: {e}"}
     return {"ok": True, "templates": templates}
 
 
@@ -446,7 +464,10 @@ def workflow_template_load(name: str) -> dict:
     """Load a template's YAML content."""
     from storage.templates import TemplateRegistry
 
-    content = TemplateRegistry().load(name)
+    try:
+        content = TemplateRegistry().load(name)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Failed to load template: {e}"}
     if content is None:
         return {"ok": False, "error": f"Template '{name}' not found"}
     return {"ok": True, "name": name, "yaml": content}
@@ -456,7 +477,10 @@ def workflow_template_delete(name: str) -> dict:
     """Delete a saved template."""
     from storage.templates import TemplateRegistry
 
-    removed = TemplateRegistry().delete(name)
+    try:
+        removed = TemplateRegistry().delete(name)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"Failed to delete template: {e}"}
     if not removed:
         return {"ok": False, "error": f"Template '{name}' not found"}
     return {"ok": True, "name": name, "deleted": True}

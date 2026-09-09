@@ -87,8 +87,14 @@ def execute_tool_step(
             raise PermissionError(
                 f"Step '{step.name}': command '{tool_name}' is not permitted by the command allowlist"
             )
+        # Defense-in-depth: escape shell metacharacters in cmd in case any
+        # {{ var }} substitutions via resolve_var_raw produced dangerous content.
+        # SHELL_OPERATOR_BLOCK above already blocks operators, but escaping
+        # ensures no operator survives even if shlex.split parses it.
+        _shell_meta_replace = str.maketrans({"$": "\\$", "`": "\\`", ";": "\\;", "|": "\\|", "&": "\\&", "<": "\\<", ">": "\\>", '"': '\\"', "'": "\\'"})
+        cmd_escaped = cmd.translate(_shell_meta_replace)
         # shell=False + shlex.split = no shell injection possible
-        out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
+        out = subprocess.run(shlex.split(cmd_escaped), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
         if out.returncode != 0:
             raise RuntimeError(
                 f"Step '{step.name}': command '{cmd}' exited with status {out.returncode}: {out.stderr.strip()}"
