@@ -19,7 +19,7 @@ class WorkflowContext:
     pipeline: list[Any] = field(default_factory=list)
     checkpoints: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def set(self, key: str, value: Any) -> None:
         with self._lock:
@@ -77,9 +77,10 @@ class WorkflowContext:
         a shell command. For non-shell uses (LLM prompts, SQL, HTML, file
         paths), use resolve_var_raw() instead.
 
-        ponytail: entire substitution runs under _lock to prevent TOCTOU
-        races where shared mutates between snapshot capture and string
-        replacement (would cause inconsistent placeholder resolution).
+        ponytail: _lock (RLock) prevents races where shared mutates between
+        snapshot capture and string replacement (would cause inconsistent
+        placeholder resolution). RLock is re-entrant so nested WorkflowContext
+        calls (e.g. if val.__str__ calls ctx.set()) do not deadlock.
         """
         if not isinstance(template, str):
             return template

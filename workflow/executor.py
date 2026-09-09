@@ -56,20 +56,21 @@ def execute_tool_step(
         raise PermissionError(f"Step '{step.name}': tool '{tool_name}' is not permitted by workflow permission policy")
 
     # Try Hermes tool registry first, fall back to subprocess for shell tools
-    result = None
+    tool_fn = None
     try:
         from tools.registry import registry as _hermes_registry
 
         entry = _hermes_registry.get_entry(tool_name)
-        tool_fn = entry.handler if entry else None
-        if tool_fn:
-            result = tool_fn(**resolved_args)
+        if entry:
+            tool_fn = entry.handler
     except Exception as e:  # noqa: BLE001
         import logging
 
         logging.getLogger(__name__).debug("Tool '%s' not found in registry: %s", tool_name, e)
 
-    if result is None:
+    if tool_fn is not None:
+        result = tool_fn(**resolved_args)
+    else:
         # Fallback: subprocess for safe read-only commands
         import shlex
         import subprocess
@@ -82,10 +83,16 @@ def execute_tool_step(
 
         if SHELL_OPERATOR_BLOCK.search(cmd):
             raise PermissionError(f"Step '{step.name}': command contains disallowed shell operators")
-        # Command allowlist: only safe commands permitted through subprocess fallback
-        if not permission_scope.is_command_allowed(cmd):
+        # Parse command to identify base executable for authorization
+        try:
+            cmd_parts = shlex.split(cmd)
+            base_cmd = cmd_parts[0] if cmd_parts else tool_name
+        except ValueError:
+            base_cmd = tool_name
+        # Authorize base executable: must match tool_name or be in allowlist
+        if base_cmd != tool_name and not permission_scope.is_command_allowed(base_cmd):
             raise PermissionError(
-                f"Step '{step.name}': command '{tool_name}' is not permitted by the command allowlist"
+                f"Step '{step.name}': command '{base_cmd}' is not permitted by the command allowlist"
             )
         # shell=False + shlex.split = no shell injection possible
         out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
