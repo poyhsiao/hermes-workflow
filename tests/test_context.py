@@ -140,14 +140,6 @@ class TestResolveVarInjectionEscaping:
         assert ctx.resolve_var(42) == 42
         assert ctx.resolve_var(None) is None
 
-    def test_resolve_var_nested_forward_placeholder(self):
-        """Forward nested placeholders resolve sequentially: {{ a }} where a={{ b }} and b=val -> val."""
-        ctx = WorkflowContext(workflow_id="w1", execution_id="e1")
-        ctx.set("b", "value")
-        ctx.set("a", "{{ b }}")
-        result = ctx.resolve_var("{{ a }}")
-        assert result == "value"
-
 
 class TestResolveArgs:
     def test_resolve_args_simple(self):

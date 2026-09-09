@@ -9,9 +9,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from ..observability.trace import trace_step
-from .context import WorkflowContext
-from .core import (
+from observability.trace import trace_step
+from workflow.context import WorkflowContext
+from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
     ParallelBranch,
@@ -19,15 +19,15 @@ from .core import (
     Step,
     StepType,
 )
-from .error_handling import ErrorAction, strategy_for
-from .events import (
+from workflow.error_handling import ErrorAction, strategy_for
+from workflow.events import (
     STEP_COMPLETED,
     STEP_FAILED,
     STEP_RETRIED,
     STEP_STARTED,
     EventBus,
 )
-from .security import AuditLogger, PermissionScope
+from workflow.security import AuditLogger, PermissionScope
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore
@@ -74,9 +74,7 @@ def execute_tool_step(
         import shlex
         import subprocess
 
-        cmd = resolved_args.get("command") or resolved_args.get("cmd", "")
-        if not cmd:
-            raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
+        cmd = resolved_args.get("command") or resolved_args.get("cmd", "") or tool_name
         if permission_scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
         # Defense-in-depth: block shell operators (still relevant if shlex parsing fails or is bypassed)
@@ -91,6 +89,10 @@ def execute_tool_step(
             )
         # shell=False + shlex.split = no shell injection possible
         out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
+        if out.returncode != 0:
+            raise RuntimeError(
+                f"Step '{step.name}': command '{cmd}' exited with status {out.returncode}: {out.stderr.strip()}"
+            )
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
     # Store result in context
@@ -124,20 +126,13 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
         if result.get("ok") is False:
             raise RuntimeError(f"Step '{step.name}': delegate_task failed: {result.get('error', result)}")
     else:
-        # Fallback: try direct import (backward compat)
-        try:
-            from tools.delegate_tool import delegate_task  # type: ignore[assignment]
-            # NOTE: delegate_task is not a Python-importable function in Hermes v0.21.0
-            # The primary path (plugin_ctx.dispatch_tool) is the correct approach
-            # This fallback only fires when plugin_ctx is None, which should not happen
-
-            result = delegate_task(
-                profile=resolved_profile or "default",
-                goal=resolved_goal,
-                context=ctx.shared,
-            )
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"Step '{step.name}': delegate_task not available (no plugin_ctx)") from e
+        # ponytail: agent steps require Hermes plugin context to dispatch delegate_task.
+        # plugin_ctx is set during register() from the PluginContext passed by Hermes.
+        # In test environments (no Hermes), agent steps cannot execute — raise clear error.
+        raise RuntimeError(
+            f"Step '{step.name}': agent step requires Hermes plugin context (plugin_ctx is None). "
+            "Agent steps only execute within Hermes runtime. Use type=tool for standalone test environments."
+        )
 
     ctx.set(step.name, result)
     ctx.push(result)

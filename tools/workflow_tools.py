@@ -7,18 +7,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from ..storage.sqlite_store import ExecutionStore
-from ..workflow.context import WorkflowContext as WfCtx
-from ..workflow.core import (
+from storage.sqlite_store import ExecutionStore
+from workflow.context import WorkflowContext as WfCtx
+from workflow.core import (
     ExecutionRecord,
     ExecutionStatus,
     WorkflowDefinition,
     WorkflowEngine,
 )
-from ..workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
-from ..workflow.executor import execute_steps
-from ..workflow.security import AuditLogger
-from ..workflow.versioned_store import VersionedStore
+from workflow.definitions import dump_workflow_yaml, parse_workflow_yaml
+from workflow.executor import execute_steps
+from workflow.security import AuditLogger
+from workflow.versioned_store import VersionedStore
 
 # Global store + running engines (thread-safe)
 _store: ExecutionStore | None = None
@@ -316,7 +316,7 @@ def workflow_rollback(
     def _run():
         try:
             # ponytail: resume from checkpoint step_index (skip already-completed steps)
-            from ..workflow.executor import execute_steps
+            from workflow.executor import execute_steps
 
             step_offset = checkpoint.get("step_index", 0) if checkpoint else 0
             ctx.checkpoints.clear()  # fresh checkpoint chain for this run
