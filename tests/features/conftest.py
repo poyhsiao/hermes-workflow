@@ -28,6 +28,9 @@ from workflow.definitions import (
     validate_workflow,
 )
 from workflow.executor import execute_steps
+
+# Load all step definition modules so pytest-bdd can discover them
+from tests.features.steps import workflow_definitions_steps, workflow_execution_steps
 from workflow.security import AuditLogger
 
 # Re-use fake tool registry from parent conftest
@@ -460,3 +463,50 @@ def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext
         f"ctx.pipeline does not match restored checkpoint snapshot. "
         f"Got {ctx.pipeline}, expected {restored_checkpoint['pipeline']}"
     )
+
+
+# ── Plugin Configuration Step Definitions ──────────────────────────────────────
+
+
+import ast
+import re
+from pathlib import Path
+
+PLUGIN_ROOT_CONFTEST = Path(__file__).resolve().parents[2]
+
+
+@given("the plugin __init__.py at hermes_dynamic_workflow", target_fixture="given_init_pi")
+def given_init_pi():
+    return PLUGIN_ROOT_CONFTEST / "__init__.py"
+
+
+@given("the plugin.yaml at hermes_dynamic_workflow", target_fixture="given_plugin_yaml_pi")
+def given_plugin_yaml_pi():
+    return PLUGIN_ROOT_CONFTEST / "plugin.yaml"
+
+
+@given("the tools module at hermes_dynamic_workflow", target_fixture="given_tools_init_pi")
+def given_tools_init_pi():
+    return PLUGIN_ROOT_CONFTEST / "tools" / "__init__.py"
+
+
+@then("the version in __init__.py should match version in plugin.yaml")
+def then_versions_match_pi(given_init_pi, given_plugin_yaml_pi):
+    import re as _re
+
+    init_text = given_init_pi.read_text()
+    yaml_text = given_plugin_yaml_pi.read_text()
+    init_match = _re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
+    yaml_match = _re.search(r'version:\s*"([^"]+)"', yaml_text)
+    assert init_match, "__init__.py: __version__ not found"
+    assert yaml_match, "plugin.yaml: version not found"
+    assert init_match.group(1) == yaml_match.group(1), (
+        f"Version mismatch: __init__.py={init_match.group(1)}, plugin.yaml={yaml_match.group(1)}"
+    )
+
+
+@then("it should export workflow_tools")
+def then_exports_workflow_tools_pi(given_tools_init_pi):
+    text = given_tools_init_pi.read_text().strip()
+    assert text, "tools/__init__.py is empty"
+    assert "workflow_tools" in text, f"tools/__init__.py does not export workflow_tools"

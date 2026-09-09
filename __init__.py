@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-__version__ = "1.1.0"
+__version__ = "1.2.4"
 __plugin_name__ = "hermes-dynamic-workflow"
 
 # ── Plugin manifest ──────────────────────────────────────────────────────────────
