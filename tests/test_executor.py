@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -443,7 +444,7 @@ steps:
   - name: fallback_step
     type: tool
     args:
-      tool: nonexistent_tool_xyz
+      tool: ls
 """
         store = make_store()
         defn = parse_workflow_yaml(yaml)
@@ -451,21 +452,25 @@ steps:
         ctx = WorkflowContext(workflow_id=defn.name, execution_id=record.id)
         audit = AuditLogger(store)
 
-        # Should NOT raise "no result and no fallback available"
-        # Instead, falls back to subprocess with tool_name as command
-        _ = execute_steps(defn, ctx, record, store, audit)
-        # subprocess will fail because 'nonexistent_tool_xyz' isn't a real command,
-        # but it should reach subprocess, not fail earlier with "no fallback available"
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "simulated failure"
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            _ = execute_steps(defn, ctx, record, store, audit)
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args[0][0] == ["ls"]
+
         steps = store.db.execute(
             "SELECT step_name, status, error FROM execution_steps WHERE execution_id=?", (record.id,)
         ).fetchall()
         step_statuses = {s["step_name"]: s for s in steps}
         step = step_statuses["fallback_step"]
-        # Should be 'failed' because subprocess returns non-zero exit code
         assert step["status"] == "failed"
-        # Error should mention the command execution failed, NOT "no result and no fallback"
         assert "no fallback" not in step["error"].lower()
-        assert "nonexistent_tool_xyz" in step["error"]
+        assert "ls" in step["error"]
 
 
 if __name__ == "__main__":

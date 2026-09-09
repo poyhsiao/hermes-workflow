@@ -449,10 +449,14 @@ def then_remaining_steps_not_execute(execution_result: tuple[ExecutionStatus, Wo
 @then("the state should be restored to checkpoint")
 def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext]) -> None:
     status, ctx = execution_result
-    # Verify rollback was triggered and executed
     assert status == ExecutionStatus.ROLLED_BACK, f"Expected ROLLED_BACK status, got {status}"
-    # Rollback restores to the state BEFORE the failing step ran (i.e., after step1 completed)
-    # Checkpoint before failing_step captured ctx after step1 succeeded
-    assert "step1" in ctx.shared, f"step1 result should persist after rollback, got {ctx.shared}"
-    assert len(ctx.pipeline) > 0, f"pipeline should contain step1 output after rollback, got {ctx.pipeline}"
     assert len(ctx.checkpoints) > 0, "checkpoint should have been recorded before rollback"
+    restored_checkpoint = ctx.checkpoints[-1]
+    assert ctx.shared == restored_checkpoint["shared"], (
+        f"ctx.shared does not match restored checkpoint snapshot. "
+        f"Got {ctx.shared}, expected {restored_checkpoint['shared']}"
+    )
+    assert ctx.pipeline == restored_checkpoint["pipeline"], (
+        f"ctx.pipeline does not match restored checkpoint snapshot. "
+        f"Got {ctx.pipeline}, expected {restored_checkpoint['pipeline']}"
+    )

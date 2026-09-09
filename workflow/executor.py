@@ -89,6 +89,10 @@ def execute_tool_step(
             )
         # shell=False + shlex.split = no shell injection possible
         out = subprocess.run(shlex.split(cmd), shell=False, capture_output=True, text=True, timeout=300, check=False)  # noqa: S602
+        if out.returncode != 0:
+            raise RuntimeError(
+                f"Step '{step.name}': command '{cmd}' exited with status {out.returncode}: {out.stderr.strip()}"
+            )
         result = {"stdout": out.stdout, "stderr": out.stderr, "returncode": out.returncode}
 
     # Store result in context
