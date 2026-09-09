@@ -15,7 +15,7 @@ from workflow.core import (
     RollbackPolicy,
 )
 from workflow.definitions import parse_workflow_yaml
-from workflow.executor import execute_steps
+from workflow.executor import execute_steps, execute_agent_step
 from workflow.security import AuditLogger
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
@@ -404,6 +404,68 @@ steps:
         assert step_statuses.get("failing_step") == "failed"
         # should_not_run must not even be attempted
         assert "should_not_run" not in step_statuses
+
+
+class TestAgentStepRequiresPluginContext:
+    """Agent steps must have plugin_ctx (Hermes runtime)."""
+
+    def test_agent_step_raises_without_plugin_context(self):
+        yaml = """
+name: agent-test
+version: 1
+steps:
+  - name: agent_step
+    type: agent
+    agent:
+      profile: default
+      goal: do something
+"""
+        store = make_store()
+        defn = parse_workflow_yaml(yaml)
+        record = make_execution_record(defn.name, store)
+        ctx = WorkflowContext(workflow_id=defn.name, execution_id=record.id)
+        audit = AuditLogger(store)
+
+        step = defn.steps[0]
+        with pytest.raises(RuntimeError, match="agent step requires Hermes plugin context"):
+            execute_agent_step(step, ctx, audit, plugin_ctx=None)
+
+
+class TestToolFallbackUsesToolName:
+    """Tool steps fall back to subprocess using tool_name when no command/cmd arg."""
+
+    def test_tool_fallback_uses_tool_name_as_command(self):
+        """When a tool is not in registry and no command/cmd arg, tool_name becomes the subprocess command."""
+        yaml = """
+name: fallback-toolname-test
+version: 1
+steps:
+  - name: fallback_step
+    type: tool
+    args:
+      tool: nonexistent_tool_xyz
+"""
+        store = make_store()
+        defn = parse_workflow_yaml(yaml)
+        record = make_execution_record(defn.name, store)
+        ctx = WorkflowContext(workflow_id=defn.name, execution_id=record.id)
+        audit = AuditLogger(store)
+
+        # Should NOT raise "no result and no fallback available"
+        # Instead, falls back to subprocess with tool_name as command
+        result = execute_steps(defn, ctx, record, store, audit)
+        # subprocess will fail because 'nonexistent_tool_xyz' isn't a real command,
+        # but it should reach subprocess, not fail earlier with "no fallback available"
+        steps = store.db.execute(
+            "SELECT step_name, status, error FROM execution_steps WHERE execution_id=?", (record.id,)
+        ).fetchall()
+        step_statuses = {s["step_name"]: s for s in steps}
+        step = step_statuses["fallback_step"]
+        # Should be 'failed' because subprocess returns non-zero exit code
+        assert step["status"] == "failed"
+        # Error should mention the command execution failed, NOT "no result and no fallback"
+        assert "no fallback" not in step["error"].lower()
+        assert "nonexistent_tool_xyz" in step["error"]
 
 
 if __name__ == "__main__":
