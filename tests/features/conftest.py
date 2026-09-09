@@ -6,12 +6,15 @@ import os
 import sys
 import tempfile
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pytest_bdd import given, then, when
 
 from storage.sqlite_store import ExecutionStore
+
+# Load all step definition modules so pytest-bdd can discover them
 from workflow.context import WorkflowContext
 from workflow.core import (
     ConcurrencyMode,
@@ -28,9 +31,6 @@ from workflow.definitions import (
     validate_workflow,
 )
 from workflow.executor import execute_steps
-
-# Load all step definition modules so pytest-bdd can discover them
-from tests.features.steps import workflow_definitions_steps, workflow_execution_steps
 from workflow.security import AuditLogger
 
 # Re-use fake tool registry from parent conftest
@@ -468,10 +468,6 @@ def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext
 # ── Plugin Configuration Step Definitions ──────────────────────────────────────
 
 
-import ast
-import re
-from pathlib import Path
-
 PLUGIN_ROOT_CONFTEST = Path(__file__).resolve().parents[2]
 
 
@@ -509,4 +505,4 @@ def then_versions_match_pi(given_init_pi, given_plugin_yaml_pi):
 def then_exports_workflow_tools_pi(given_tools_init_pi):
     text = given_tools_init_pi.read_text().strip()
     assert text, "tools/__init__.py is empty"
-    assert "workflow_tools" in text, f"tools/__init__.py does not export workflow_tools"
+    assert "workflow_tools" in text, "tools/__init__.py does not export workflow_tools"
