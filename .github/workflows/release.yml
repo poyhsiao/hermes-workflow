@@ -62,7 +62,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pip install pytest pytest-cov pyyaml
+          pip install pytest pytest-cov pytest-bdd pyyaml
           python -m pytest tests/ -v --tb=short
 
   release:
