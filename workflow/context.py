@@ -89,24 +89,26 @@ class WorkflowContext:
         shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
-        replacements: list[tuple[str, str]] = []
-        for key, val in shared_items:
-            placeholder = "{{ " + key + " }}"
-            if placeholder in result:
-                replacement = str(val)
-                escaped: list[str] = []
-                for ch in replacement:
-                    if ch == "\\":
-                        escaped.append("\\\\")
-                    elif ch == "\n":
-                        escaped.append("\\n")
-                    elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
-                        escaped.append("\\" + ch)
-                    else:
-                        escaped.append(ch)
-                replacements.append((placeholder, "".join(escaped)))
-        for placeholder, escaped_str in replacements:
-            result = result.replace(placeholder, escaped_str)
+        while True:
+            replaced = False
+            for key, val in shared_items:
+                placeholder = "{{ " + key + " }}"
+                if placeholder in result:
+                    replacement = str(val)
+                    escaped: list[str] = []
+                    for ch in replacement:
+                        if ch == "\\":
+                            escaped.append("\\\\")
+                        elif ch == "\n":
+                            escaped.append("\\n")
+                        elif ch in ("$", "`", ";", "&", "|", "<", ">", '"', "'"):
+                            escaped.append("\\" + ch)
+                        else:
+                            escaped.append(ch)
+                    result = result.replace(placeholder, "".join(escaped))
+                    replaced = True
+            if not replaced:
+                break
         return result
 
     def resolve_var_raw(self, template: str) -> str:
@@ -122,10 +124,15 @@ class WorkflowContext:
         shared_items: list[tuple[str, Any]] = []
         with self._lock:
             shared_items = list(self.shared.items())
-        for key, val in shared_items:
-            placeholder = "{{ " + key + " }}"
-            if placeholder in result:
-                result = result.replace(placeholder, str(val))
+        while True:
+            replaced = False
+            for key, val in shared_items:
+                placeholder = "{{ " + key + " }}"
+                if placeholder in result:
+                    result = result.replace(placeholder, str(val))
+                    replaced = True
+            if not replaced:
+                break
         return result
 
     def resolve_args(self, args: dict) -> dict:

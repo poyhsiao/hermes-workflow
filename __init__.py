@@ -21,9 +21,9 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     Called by Hermes PluginManager on discovery.
     Register all hooks, tools, and CLI commands here.
     """
-    import cli.workflow_commands as wc
-    import tools.workflow_tools as wt
-    from tools.schemas import SCHEMAS
+    from .cli import workflow_commands as wc
+    from .tools import workflow_tools as wt
+    from .tools.schemas import SCHEMAS
 
     # Store plugin context for use in agent steps (delegate_task dispatch)
     wt._set_plugin_ctx(ctx)
@@ -72,7 +72,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     # Register in-session slash command (/workflow) — works in both CLI and gateway
     ctx.register_command(
         "workflow",
-        handler_fn=_handle_workflow_command,
+        handler=_handle_workflow_command,
         description="Dynamic workflow management: run, define, list, stop, etc.",
         args_hint="<verb> [args]",
     )
@@ -90,7 +90,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
     ctx.register_hook("pre_gateway_dispatch", _pre_gateway_hook)
 
     # Ensure DB is initialized
-    from storage.sqlite_store import ExecutionStore
+    from .storage.sqlite_store import ExecutionStore
 
     ExecutionStore()
 
@@ -100,7 +100,7 @@ def register(ctx: "PluginContext") -> None:  # type: ignore[name-defined]  # noq
 
 def _handle_workflow_command(raw_args: str) -> str | None:
     """Handle /workflow <verb> [args] from any session (CLI or gateway)."""
-    import tools.workflow_tools as wt
+    from .tools import workflow_tools as wt
     from triggers.slash_command import WorkflowSlashDispatcher
 
     dispatcher = WorkflowSlashDispatcher(wt)
@@ -112,7 +112,7 @@ def _handle_workflow_command(raw_args: str) -> str | None:
 
 def _handle_cli_workflow(args) -> None:
     """Handle `hermes workflow <verb>` terminal command (argparse Namespace)."""
-    import cli.workflow_commands as wc
+    from .cli import workflow_commands as wc
 
     result = wc._dispatch_workflow(args)
     wc.print_result(result)

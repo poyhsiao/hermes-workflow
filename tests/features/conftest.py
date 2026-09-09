@@ -451,5 +451,8 @@ def then_state_restored(execution_result: tuple[ExecutionStatus, WorkflowContext
     status, ctx = execution_result
     # Verify rollback was triggered and executed
     assert status == ExecutionStatus.ROLLED_BACK, f"Expected ROLLED_BACK status, got {status}"
-    # Checkpoint rollback records the checkpoint in ctx.checkpoints
+    # Rollback restores to the state BEFORE the failing step ran (i.e., after step1 completed)
+    # Checkpoint before failing_step captured ctx after step1 succeeded
+    assert "step1" in ctx.shared, f"step1 result should persist after rollback, got {ctx.shared}"
+    assert len(ctx.pipeline) > 0, f"pipeline should contain step1 output after rollback, got {ctx.pipeline}"
     assert len(ctx.checkpoints) > 0, "checkpoint should have been recorded before rollback"

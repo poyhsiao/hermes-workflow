@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import yaml
 
-from workflow.core import WorkflowDefinition
+from .core import WorkflowDefinition
 
 
 class ValidationError(Exception):

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from workflow.context import WorkflowContext
-from workflow.security import PermissionScope
+from .context import WorkflowContext
+from .security import PermissionScope
 
 if TYPE_CHECKING:
     from storage.sqlite_store import ExecutionStore

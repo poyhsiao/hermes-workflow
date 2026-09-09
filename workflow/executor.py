@@ -58,9 +58,10 @@ def execute_tool_step(
     # Try Hermes tool registry first, fall back to subprocess for shell tools
     result = None
     try:
-        from tools.registry import get_tool
+        from tools.registry import registry as _hermes_registry
 
-        tool_fn = get_tool(tool_name)
+        entry = _hermes_registry.get_entry(tool_name)
+        tool_fn = entry.handler if entry else None
         if tool_fn:
             result = tool_fn(**resolved_args)
     except Exception as e:  # noqa: BLE001
@@ -73,9 +74,7 @@ def execute_tool_step(
         import shlex
         import subprocess
 
-        cmd = resolved_args.get("command") or resolved_args.get("cmd", "")
-        if not cmd:
-            raise RuntimeError(f"Step '{step.name}': tool '{tool_name}' produced no result and no fallback available")
+        cmd = resolved_args.get("command") or resolved_args.get("cmd", "") or tool_name
         if permission_scope.is_destructive(cmd):
             raise PermissionError(f"Step '{step.name}': command '{cmd}' is destructive and blocked")
         # Defense-in-depth: block shell operators (still relevant if shlex parsing fails or is bypassed)
@@ -123,17 +122,13 @@ def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plu
         if result.get("ok") is False:
             raise RuntimeError(f"Step '{step.name}': delegate_task failed: {result.get('error', result)}")
     else:
-        # Fallback: try direct import (backward compat)
-        try:
-            from tools.delegate_tool import delegate_task  # type: ignore[assignment]
-
-            result = delegate_task(
-                profile=resolved_profile or "default",
-                goal=resolved_goal,
-                context=ctx.shared,
-            )
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"Step '{step.name}': delegate_task not available (no plugin_ctx)") from e
+        # ponytail: agent steps require Hermes plugin context to dispatch delegate_task.
+        # plugin_ctx is set during register() from the PluginContext passed by Hermes.
+        # In test environments (no Hermes), agent steps cannot execute — raise clear error.
+        raise RuntimeError(
+            f"Step '{step.name}': agent step requires Hermes plugin context (plugin_ctx is None). "
+            "Agent steps only execute within Hermes runtime. Use type=tool for standalone test environments."
+        )
 
     ctx.set(step.name, result)
     ctx.push(result)

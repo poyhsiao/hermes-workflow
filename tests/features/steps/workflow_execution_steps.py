@@ -229,9 +229,3 @@ def then_step2_after_step1(ctx: WorkflowContext) -> None:
 def then_remaining_steps_not_execute(ctx: WorkflowContext) -> None:
     step2 = ctx.get("step2")
     assert step2 is None, "step2 should not have executed due to fail_fast"
-
-
-@then("the state should be restored to checkpoint")
-def then_state_restored(ctx: WorkflowContext) -> None:
-    # Checkpoint rollback behavior - state should be empty or at checkpoint
-    pass  # Placeholder for rollback verification
