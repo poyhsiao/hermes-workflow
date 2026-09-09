@@ -180,6 +180,7 @@ def workflow_define(name: str, yaml: str, created_by: str | None = None) -> dict
         try:
             vs.save(defn, created_by, "updated via workflow_define")
         except Exception as e:  # noqa: BLE001
+            store.db.rollback()
             return {"ok": False, "error": f"Failed to update workflow: {e}"}
         return {"ok": True, "name": name, "version": defn.version + 1, "updated": True}
     else:
@@ -389,6 +390,7 @@ def workflow_import(yaml: str, as_template: bool = False) -> dict:
     try:
         vs.save(defn)
     except Exception as e:  # noqa: BLE001
+        store.db.rollback()
         return {"ok": False, "error": f"Failed to import workflow: {e}"}
     return {"ok": True, "name": defn.name, "version": defn.version, "imported": True}
 
