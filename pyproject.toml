@@ -9,6 +9,10 @@ dependencies = [
     "transformers>=4.30",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "storage*", "workflow*", "triggers*", "observability*", "tools*"]
+
 [tool.ruff]
 line-length = 120
 
