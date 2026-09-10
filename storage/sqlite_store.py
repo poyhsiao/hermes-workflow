@@ -180,9 +180,9 @@ class ExecutionStore:
     def list_definitions(self, include_templates: bool = False) -> list[dict]:
         # Use conditional query to avoid string concatenation (SQL injection pattern flagged by static analysis)
         if include_templates:
-            query = "SELECT id, name, version, created_at, updated_at, is_template FROM workflow_definitions ORDER BY updated_at DESC"
+            query = "SELECT id, name, version, created_at, updated_at, is_template, definition_yaml FROM workflow_definitions ORDER BY updated_at DESC"
         else:
-            query = "SELECT id, name, version, created_at, updated_at, is_template FROM workflow_definitions WHERE is_template=0 ORDER BY updated_at DESC"
+            query = "SELECT id, name, version, created_at, updated_at, is_template, definition_yaml FROM workflow_definitions WHERE is_template=0 ORDER BY updated_at DESC"
         rows = self.db.execute(query).fetchall()
         results = []
         for r in rows:

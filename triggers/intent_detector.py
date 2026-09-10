@@ -44,9 +44,44 @@ KEYWORD_HINTS = {
 _onnx_session: Any = None
 _onnx_lock = threading.Lock()
 
+# ponytail: singleton ExecutionStore guarded by lock
+_store: Any = None
+_store_lock = threading.Lock()
+
 # Module-level workflow embedding cache (name -> embedding vector)
 _workflow_embeddings: dict[str, list[float]] = {}
 _workflow_emb_lock = threading.Lock()
+
+# ponytail: tokenizer instance for BERT-based nomic model
+_tokenizer: Any = None
+_tokenizer_lock = threading.Lock()
+
+
+def _get_store() -> Any:
+    """Lazily initialize and return the shared ExecutionStore."""
+    global _store
+    if _store is not None:
+        return _store
+    with _store_lock:
+        if _store is not None:
+            return _store
+        _store = ExecutionStore()
+    return _store
+
+
+def _get_tokenizer() -> Any:
+    """Lazily load BERT tokenizer for nomic-embed-text-v1.5."""
+    global _tokenizer
+    if _tokenizer is not None:
+        return _tokenizer
+    with _tokenizer_lock:
+        if _tokenizer is not None:
+            return _tokenizer
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        _tokenizer = tokenizer
+    return _tokenizer
 
 
 def _get_onnx_session() -> Any:
@@ -58,42 +93,87 @@ def _get_onnx_session() -> Any:
         # Double-check after acquiring lock
         if _onnx_session is not None:
             return _onnx_session
-        # ponytail: onnxruntime imported lazily to avoid hard dep at import time
         from onnxruntime import InferenceSession
 
         model_path = os.environ.get(
             "HERMES_INTENT_MODEL_PATH",
             os.path.join(os.path.dirname(__file__), "..", "models", "nomic-embed-text-v1.5.onnx"),
         )
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Intent model not found at {model_path}")
         _onnx_session = InferenceSession(model_path, providers=["CPUExecutionProvider"])
     return _onnx_session
 
 
-def _tokenize(text: str, max_tokens: int) -> str:
-    """Truncate text to max_tokens using tiktoken if available, else naive char/4."""
-    try:
-        import tiktoken
+def _tokenize_for_model(text: str, max_tokens: int) -> dict:
+    """Tokenize text using BERT tokenizer for ONNX model input.
 
-        enc = tiktoken.get_encoding("cl100k_base")
-        tokens = enc.encode(text)
-        return enc.decode(tokens[:max_tokens])
-    except Exception:
-        # tiktoken unavailable — fall back to conservative ASCII char limit
-        return text[: max_tokens * 4]
+    Returns dict with input_ids, attention_mask, and token_type_ids.
+    """
+    tokenizer = _get_tokenizer()
+    encoded = tokenizer(
+        text,
+        max_length=max_tokens,
+        padding="max_length",
+        truncation=True,
+        return_tensors="np",
+    )
+    return {
+        "input_ids": encoded["input_ids"],
+        "attention_mask": encoded["attention_mask"],
+        "token_type_ids": encoded.get("token_type_ids", np.zeros_like(encoded["input_ids"])),
+    }
 
 
 def _embed_text(text: str) -> list[float]:
     """Embed text using local ONNX nomic-embed-text-v1.5. Returns normalized float vector."""
     sess = _get_onnx_session()
-    input_name = sess.get_inputs()[0].name
     max_tokens = int(os.environ.get("HERMES_INTENT_MAX_TOKENS", "512"))
-    text = _tokenize(text, max_tokens)
+    inputs = _tokenize_for_model(text, max_tokens)
 
-    vec = sess.run(None, {input_name: [text]})[0][0]
-    # L2 normalize
+    input_bindings = {}
+    for input_meta in sess.get_inputs():
+        name = input_meta.name
+        if name == "input_ids":
+            input_bindings[name] = inputs["input_ids"].astype(np.int64)
+        elif name == "attention_mask":
+            input_bindings[name] = inputs["attention_mask"].astype(np.int64)
+        elif name == "token_type_ids":
+            input_bindings[name] = inputs["token_type_ids"].astype(np.int64)
+        else:
+            input_bindings[name] = inputs.get(name, inputs["input_ids"].astype(np.int64))
+
+    output_names = [out.name for out in sess.get_outputs()]
+    outputs = sess.run(output_names, input_bindings)
+
+    if len(outputs) == 1:
+        vec = outputs[0]
+        if vec.ndim == 3:
+            vec = _mean_pool_tokens(vec, inputs["attention_mask"])
+        elif vec.ndim == 2:
+            pass
+        vec = vec[0] if vec.shape[0] == 1 else vec
+    else:
+        last_idx = len(output_names) - 1
+        if "last_hidden_state" in output_names:
+            last_idx = output_names.index("last_hidden_state")
+        vec = outputs[last_idx]
+        if vec.ndim == 3:
+            vec = _mean_pool_tokens(vec, inputs["attention_mask"])
+
     norm = np.linalg.norm(vec)
     vec = vec / norm if norm > 0 else vec
-    return vec.tolist()
+    return vec.flatten().tolist()
+
+
+def _mean_pool_tokens(token_vectors: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+    """Mean-pool valid token vectors, ignoring padding."""
+    mask_expanded = np.expand_dims(attention_mask, axis=-1)
+    mask_expanded = np.where(mask_expanded == 0, 1e-9, mask_expanded)
+    summed = np.sum(token_vectors * mask_expanded, axis=1)
+    counts = np.sum(mask_expanded, axis=1)
+    pooled = summed / counts
+    return pooled
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -174,9 +254,8 @@ def detect_workflow_intent(messages: list[dict]) -> list[dict]:
         logger.warning("intent_detector: user embedding failed, falling back to keywords: %s", exc)
         return list(keyword_matches.values())
 
-    # Load all workflow definitions
-    store = ExecutionStore()
-    all_defs = store.list_definitions()
+    # Load all workflow definitions using shared store
+    all_defs = _get_store().list_definitions()
 
     # Use module-level embedding cache for cross-call efficiency
     semantic_results: list[dict] = []
