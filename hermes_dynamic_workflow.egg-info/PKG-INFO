@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: hermes-dynamic-workflow
+Version: 1.2.5
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: numpy>=1.24
+Requires-Dist: onnxruntime>=1.16
+Requires-Dist: transformers>=4.30
+Dynamic: license-file

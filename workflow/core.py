@@ -153,10 +153,12 @@ class WorkflowDefinition:
     def from_dict(cls, d: dict, yaml_str: str = "") -> WorkflowDefinition:
         perm = d.get("permission")
         scope = PermissionScope.from_workflow_definition(perm) if perm else None
+        raw_desc = d.get("description", "")
+        description = raw_desc if isinstance(raw_desc, str) else ""
         return cls(
             name=d["name"],
             version=d.get("version", 1),
-            description=d.get("description", ""),
+            description=description,
             concurrency=ConcurrencyMode(d.get("concurrency", "sequential")),
             max_duration=d.get("max_duration", 0),
             error_policy=ErrorPolicy(d.get("error_policy", "fail_fast")),

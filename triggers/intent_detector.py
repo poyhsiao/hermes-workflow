@@ -70,7 +70,12 @@ def _get_store() -> Any:
 
 
 def _get_tokenizer() -> Any:
-    """Lazily load BERT tokenizer for nomic-embed-text-v1.5."""
+    """Lazily load BERT tokenizer for nomic-embed-text-v1.5.
+
+    Resolves a configurable local tokenizer directory via HERMES_INTENT_TOKENIZER_PATH,
+    or derives it from the ONNX model path. Loads with local_files_only=True so
+    offline deployments fall back to keyword matching when tokenizer assets are missing.
+    """
     global _tokenizer
     if _tokenizer is not None:
         return _tokenizer
@@ -79,7 +84,19 @@ def _get_tokenizer() -> Any:
             return _tokenizer
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        tokenizer_path = os.environ.get("HERMES_INTENT_TOKENIZER_PATH")
+        if tokenizer_path:
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
+        else:
+            model_path = os.environ.get(
+                "HERMES_INTENT_MODEL_PATH",
+                os.path.join(os.path.dirname(__file__), "..", "models", "nomic-embed-text-v1.5.onnx"),
+            )
+            tokenizer_dir = os.path.dirname(model_path)
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, local_files_only=True)
+            except Exception:
+                tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         _tokenizer = tokenizer
     return _tokenizer
 
@@ -114,7 +131,7 @@ def _tokenize_for_model(text: str, max_tokens: int) -> dict:
     encoded = tokenizer(
         text,
         max_length=max_tokens,
-        padding="max_length",
+        padding=False,
         truncation=True,
         return_tensors="np",
     )
@@ -140,8 +157,10 @@ def _embed_text(text: str) -> list[float]:
             input_bindings[name] = inputs["attention_mask"].astype(np.int64)
         elif name == "token_type_ids":
             input_bindings[name] = inputs["token_type_ids"].astype(np.int64)
+        elif name in inputs:
+            input_bindings[name] = inputs[name].astype(np.int64)
         else:
-            input_bindings[name] = inputs.get(name, inputs["input_ids"].astype(np.int64))
+            raise ValueError(f"Intent model requires unsupported input {name!r}")
 
     output_names = [out.name for out in sess.get_outputs()]
     outputs = sess.run(output_names, input_bindings)
@@ -250,12 +269,15 @@ def detect_workflow_intent(messages: list[dict]) -> list[dict]:
     try:
         user_vec = _embed_text(combined_text)
     except Exception as exc:
-        # ONNX not available or model missing — fall back to keyword-only
         logger.warning("intent_detector: user embedding failed, falling back to keywords: %s", exc)
         return list(keyword_matches.values())
 
     # Load all workflow definitions using shared store
-    all_defs = _get_store().list_definitions()
+    try:
+        all_defs = _get_store().list_definitions()
+    except Exception as exc:
+        logger.warning("intent_detector: store access failed, falling back to keywords: %s", exc)
+        return list(keyword_matches.values())
 
     # Use module-level embedding cache for cross-call efficiency
     semantic_results: list[dict] = []
