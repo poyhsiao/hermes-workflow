@@ -137,7 +137,7 @@ def test_non_string_description_normalized(store):
 
     defn = WorkflowDefinition.from_dict({"name": "non-string-desc-test", "version": 1, "steps": [], "description": ["foo", "bar"]})
     assert defn.description == ""
-    wf_id = store.save_definition(defn)
+    store.save_definition(defn)
     defs = store.list_definitions()
     matching = [d for d in defs if d["name"] == "non-string-desc-test"]
     assert len(matching) == 1
