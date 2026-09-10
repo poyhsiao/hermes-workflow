@@ -2,7 +2,18 @@
 
 All notable changes to `hermes-dynamic-workflow` are documented here.
 
-## [1.2.5] — 2025-01-01
+## [1.2.6] — 2026-09-10
+
+### Bug Fixes
+
+- **Non-string description normalization** — `WorkflowDefinition.from_dict()` now coerces non-string `description` values to empty string instead of passing through raw list/dict, preventing SQLite type errors.
+- **Unused variable** — removed unused `wf_id` assignment in `test_non_string_description_normalized`.
+
+### Dependencies
+
+- Removed `tiktoken` (embedding cache now uses numpy directly).
+
+## [1.2.5] — 2026-09-10
 
 ### Features
 
