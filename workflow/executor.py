@@ -109,10 +109,19 @@ def execute_tool_step(
     return result
 
 
-def execute_agent_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, plugin_ctx: Any = None) -> Any:
+def execute_agent_step(
+    step: Step, ctx: WorkflowContext, audit: AuditLogger, permission_scope: PermissionScope | None = None, plugin_ctx: Any = None
+) -> Any:
     """Execute an agent step via Hermes delegate_task tool (blocking)."""
     resolved_goal = ctx.resolve_var(step.agent_goal or "")
     resolved_profile = ctx.resolve_var(step.agent_profile or "")
+
+    # Enforce permission scope (same policy as tool steps — block delegate_task if not permitted)
+    if permission_scope is None:
+        from workflow.security import PermissionScope
+        permission_scope = PermissionScope()
+    if not permission_scope.can_run_tool("delegate_task"):
+        raise PermissionError(f"Step '{step.name}': agent step uses delegate_task which is not permitted by workflow permission policy")
 
     if plugin_ctx is not None:
         # Use Hermes dispatch_tool for proper tool integration
@@ -207,7 +216,7 @@ def _execute_single_step(step: Step, ctx: WorkflowContext, audit: AuditLogger, p
             if step.step_type == StepType.TOOL:
                 result = execute_tool_step(step, ctx, audit, permission_scope)
             elif step.step_type == StepType.AGENT:
-                result = execute_agent_step(step, ctx, audit, plugin_ctx=plugin_ctx)
+                result = execute_agent_step(step, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
             elif step.step_type == StepType.PARALLEL_BRANCH:
                 result = execute_parallel_branch(step, ctx, audit, permission_scope, plugin_ctx=plugin_ctx)
             elif step.step_type == StepType.CHECKPOINT:

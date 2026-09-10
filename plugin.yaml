@@ -1,5 +1,5 @@
 name: hermes-dynamic-workflow
-version: "1.2.4"
+version: "1.2.5"
 description: Dynamic workflow execution engine (Claude Code /workflow style)
 author: Kim Hsiao
 platforms: [cli, tui, desktop]
