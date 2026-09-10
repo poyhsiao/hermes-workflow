@@ -2,7 +2,28 @@
 
 All notable changes to `hermes-dynamic-workflow` are documented here.
 
-## [Unreleased] — 2026-09-07
+## [1.2.5] — 2025-01-01
+
+### Features
+
+- **Semantic intent detection** — `triggers/intent_detector.py` now uses local ONNX `nomic-embed-text-v1.5` embedding + cosine similarity for workflow suggestions. Keyword matching still available as fallback with word-boundary regex to avoid substring false positives (e.g. "contest" won't match "test").
+- **Embedding cache** — workflow text embeddings cached at module level to avoid re-computing on every `pre_llm_call` hook.
+- **Configurable top-K** — `HERMES_INTENT_TOP_K` env var controls how many semantic results to return (default: 5).
+- **Token truncation** — tiktoken `cl100k_base` encoding with `HERMES_INTENT_MAX_TOKENS` (default: 512) for long conversations.
+
+### Security
+
+- **Agent step permission scope** — `execute_agent_step` now enforces `PermissionScope.can_run_tool("delegate_task")`, consistent with tool step policy. Agent steps that use `delegate_task` are blocked if not permitted.
+
+### Bug Fixes
+
+- **Directory permissions** — `TemplateRegistry` creates template dir with `0o755` mode to avoid overly permissive defaults.
+
+### Dependencies
+
+- Added `numpy>=1.24`, `onnxruntime>=1.16`, `tiktoken>=0.5` (new `[project]` section in `pyproject.toml`).
+
+## [1.2.4] — 2026-09-07
 
 ### Breaking — Hermes v0.21.0 API Compatibility
 

@@ -132,5 +132,17 @@ def test_versioning(store):
     assert defn3.description == "updated"
 
 
+def test_non_string_description_normalized(store):
+    from workflow.core import WorkflowDefinition
+
+    defn = WorkflowDefinition.from_dict({"name": "non-string-desc-test", "version": 1, "steps": [], "description": ["foo", "bar"]})
+    assert defn.description == ""
+    store.save_definition(defn)
+    defs = store.list_definitions()
+    matching = [d for d in defs if d["name"] == "non-string-desc-test"]
+    assert len(matching) == 1
+    assert matching[0]["description"] == ""
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

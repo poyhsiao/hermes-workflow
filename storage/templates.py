@@ -17,7 +17,7 @@ class TemplateRegistry:
 
     def __init__(self, template_dir: Path | None = None):
         self.template_dir = template_dir or DEFAULT_TEMPLATE_DIR
-        self.template_dir.mkdir(parents=True, exist_ok=True)
+        self.template_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
 
     def save(self, name: str, yaml_content: str, description: str = "", tags: list[str] | None = None) -> str:
         """Save a workflow as a template file."""

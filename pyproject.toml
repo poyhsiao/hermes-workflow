@@ -1,3 +1,17 @@
+[project]
+name = "hermes-dynamic-workflow"
+version = "1.2.5"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "onnxruntime>=1.16",
+    "transformers>=4.30",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "storage*", "workflow*", "triggers*", "observability*", "tools*"]
+
 [tool.ruff]
 line-length = 120
 
